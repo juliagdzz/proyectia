@@ -1,5 +1,10 @@
 {
   "functions": {
-    "api/producto.js": { "maxDuration": 60 }
+    "api/producto.js": {
+      "maxDuration": 60
+    },
+    "api/plano.js": {
+      "maxDuration": 60
+    }
   }
 }
