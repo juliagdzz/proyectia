@@ -589,6 +589,7 @@ s.old{color:var(--muted);font-size:.6em;font-weight:500;margin-left:4px}
 .wl-pop input{width:80px;padding:6px 8px;font-size:18px;font-weight:700;text-align:right}
 .wl-pop span{font-weight:600;color:var(--muted)}
 #drawLayer line,#drawLayer text,#drawLayer path{pointer-events:none}
+.vx-pop{position:absolute;z-index:6;display:flex;gap:6px;padding:6px;border-radius:12px;background:var(--surface);border:1px solid var(--blue);box-shadow:0 8px 22px rgb(35 64 126 / .22)}
 .dxf-btn{background:var(--blue-soft);border-color:var(--blue);color:var(--blue-ink);font-weight:600}
 .re-tip{margin:4px 0 0;padding:8px 10px;border-radius:10px;background:var(--blue-soft);color:var(--blue-ink);font-size:13px}
 .fin-who{margin:0;padding:8px 10px;border-radius:10px;background:var(--blue-soft);color:var(--blue-ink);font-size:13px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -1620,7 +1621,7 @@ function drawFinish(r){
     S.drawMode=false; S.drawPts=null; S.drawOff=null; S.drawRef=null; S.drawNew=false; S.drawSel=null;
     save("estancias",id,{proyectoId:r.proyectoId,nombre:`Estancia ${n}`,ancho:W,largo:L,alto:techoR(r),puntos:Q.map(([x,y])=>({x,y})),creado:Date.now()}).then(()=>{ S.roomId=id; S.editShape=true; render(); setTimeout(()=>{ $("rp_nombre")?.focus(); $("rp_nombre")?.select(); },80); }).catch(()=>{});
     toast("Estancia nueva creada. Ponle nombre en el panel."); return; }
-  const o=S.drawOff||{x:0,y:0}; S.drawMode=false; S.drawPts=null; S.drawOff=null; S.drawSel=null; S.drawRef=null; saveShape(r,P.map(p=>[p[0]-o.x,p[1]-o.y])); toast("Forma guardada. Pulsa una medida del plano para ajustarla.");
+  const o=S.drawOff||{x:0,y:0}; S.drawMode=false; S.drawPts=null; S.drawOff=null; S.drawSel=null; S.drawRef=null; S.drawExt=false; saveShape(r,P.map(p=>[p[0]-o.x,p[1]-o.y])); toast("Forma guardada. Pulsa una medida del plano para ajustarla.");
 }
 // Pulsar una medida del plano: aparece un recuadro para escribir la nueva
 function wallEdit(r,i,e){
@@ -1645,8 +1646,8 @@ function shapePanel(r,P){
   const estName=e=>({viga:"Viga",pilar:"Columna",tabique:"Tabique"})[e.tipo]||"Elemento";
   if(S.drawMode){ const n=(S.drawPts||[]).length, sel=S.drawSel!=null;
     return `<div class="panel room-ed"><div class="ph"><h3>${S.drawNew?"Otra habitación al lado":"Dibujar la forma"}</h3></div>
-    <ol class="sh-steps">${S.drawNew?`<li>La habitación actual sale en gris. Pincha donde va <b>cada esquina</b> de la nueva: se pegan solas a las esquinas de la otra.</li>`:`<li>Sigues desde tu forma: pincha en el plano para <b>añadir esquinas</b> después del punto <b style="color:var(--red)">rojo</b> (el último).</li>`}
-      <li><b>Pincha cualquier punto</b> para borrarlo o para seguir dibujando desde él.</li><li>Para terminar, pincha el <b style="color:var(--ok)">punto verde</b> o pulsa «Cerrar la forma».</li></ol>
+    <ol class="sh-steps">${S.drawNew?`<li>La habitación actual sale en gris. Pincha donde va <b>cada esquina</b> de la nueva: se pegan solas a las esquinas de la otra.</li>`:`${S.drawExt?`<li>Partes de la esquina <b style="color:var(--red)">roja</b>. Pincha hacia donde quieres llevar la pared nueva, luego donde gira, y así hasta volver.</li><li>Para cerrar, pincha el <b style="color:var(--ok)">punto verde</b>: la pared vieja entre el rojo y el verde se sustituye por las nuevas.</li>`:`<li>Sigues desde tu forma: pincha en el plano para <b>añadir esquinas</b> después del punto <b style="color:var(--red)">rojo</b> (el último).</li>`}`}
+      <li><b>Pincha cualquier punto</b> para borrarlo o para seguir dibujando desde él.</li>${S.drawExt?"":`<li>Para terminar, pincha el <b style="color:var(--ok)">punto verde</b> o pulsa «Cerrar la forma».</li>`}</ol>
     ${sel?`<div class="fx-form"><h4>Punto seleccionado</h4><div class="full" style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm danger" type="button" data-act="drawDelPt">🗑 Borrar este punto</button><button class="btn sm primary" type="button" data-act="drawFrom">➜ Seguir desde aquí</button><button class="btn ghost sm" type="button" data-act="drawSelNone">Cancelar</button></div></div>`:""}
     <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary sm" type="button" id="drawClose" data-act="drawClose"${n<3?" disabled":""}>Cerrar la forma</button><button class="btn sm" type="button" id="drawUndo" data-act="drawUndo"${n?"":" disabled"}>↶ Quitar el último punto</button><button class="btn sm danger" type="button" id="drawClear" data-act="drawClear"${n?"":" disabled"}>🗑 Borrar y empezar de cero</button><button class="btn ghost sm" type="button" data-act="drawCancel">Cancelar</button></div></div>`; }
   let form="";
@@ -1671,7 +1672,7 @@ function shapePanel(r,P){
       <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary" type="button" data-act="drawStart">✏️ Dibujar la forma</button><button class="btn" type="button" data-act="drawNewRoom">＋ Otra habitación al lado</button></div>
       <p class="muted" style="margin:0;font-size:13px">O empieza desde una forma típica:</p>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${[["rect","▭ Rectangular"],["L","⌐ En L"],["U","⊔ En U"],["chaflan","⬠ Con chaflán"]].map(([k,n])=>`<button class="btn sm" type="button" data-tpl="${k}"${k==="rect"&&rect?' aria-pressed="true"':""}>${n}</button>`).join("")}</div>
-      ${S.shapeSel?.t==="v"&&P[S.shapeSel.i]?`<button class="btn sm danger" type="button" data-act="delVtx"${P.length<=3?" disabled":""}>Quitar la esquina seleccionada</button>`:`<p class="muted" style="margin:0;font-size:12px">Arrastra las esquinas naranjas. Para <b>añadir una esquina</b>, pincha en la pared justo donde la quieres y arrastra.</p>`}
+      ${S.shapeSel?.t==="v"&&P[S.shapeSel.i]?`<div class="fx-form"><h4>Esquina seleccionada</h4><div class="full" style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm primary" type="button" data-act="extendFrom">➜ Ampliar desde aquí</button><button class="btn sm danger" type="button" data-act="delVtx"${P.length<=3?" disabled":""}>Quitar esta esquina</button></div><p class="muted full" style="margin:0;font-size:12px">«Ampliar» te deja dibujar paredes nuevas que salen de esta esquina, por ejemplo para hacer una L.</p></div>`:`<p class="muted" style="margin:0;font-size:12px">Arrastra las esquinas naranjas. Para <b>añadir una esquina</b>, pincha en la pared justo donde la quieres y arrastra.</p>`}
     </section>
     <section class="re-s"><h4>3 · Columnas, vigas y tabiques</h4>
       <p class="muted" style="margin:0;font-size:13px">Forman parte de las paredes: se ven del color de la pared y los muebles no pueden ocupar su sitio. Púlsalos en el plano para cambiarlos.</p>
@@ -1801,6 +1802,10 @@ async function saveShape0(r,P){
 }
 function bindShape(r){
   const svg=$("plan"); if(!svg) return;
+  if(!S.drawMode&&S.shapeSel?.t==="v"){ const P=pts(r), v=P[S.shapeSel.i], box=document.querySelector(".canvas");
+    if(v&&box){ const pt=svg.createSVGPoint(); pt.x=v[0]; pt.y=v[1]; const q=pt.matrixTransform(svg.getScreenCTM()), b=box.getBoundingClientRect();
+      const f=document.createElement("div"); f.className="vx-pop"; f.innerHTML=`<button type="button" class="btn sm primary" data-act="extendFrom">➜ Ampliar desde aquí</button><button type="button" class="btn sm danger" data-act="delVtx"${P.length<=3?" disabled":""}>Quitar</button>`;
+      f.style.left=Math.max(4,Math.min(b.width-250,q.x-b.left+14))+"px"; f.style.top=Math.max(4,q.y-b.top-20)+"px"; box.appendChild(f); } }
   const toCm=e=>{const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;return pt.matrixTransform(svg.getScreenCTM().inverse())};
   const pad=+svg.dataset.pad, hs=+svg.dataset.hs;
   let drag=null;
@@ -1829,6 +1834,7 @@ function bindShape(r){
     P[drag.i]=[x,y]; drag.moved=true; S.tmpPts={id:r.id,P}; redraw(P);
   });
   const end=()=>{ if(!drag) return; const d=drag; drag=null; S.dragging=false; if(d.moved) saveShape(r,d.P); else { S.tmpPts=null; render(); } };
+  svg.addEventListener("pointerdown",()=>document.querySelector(".vx-pop")?.remove(),{capture:true});
   svg.addEventListener("pointerup",end); svg.addEventListener("pointercancel",end);
 }
 
@@ -1839,7 +1845,7 @@ function planHTML(p,r){
   if(!r) return `<div class="toolbar">${chips}</div><div class="blank"><h2>Dibuja tu primera estancia</h2><p>Solo necesitas el ancho y el largo en centímetros. Después arrastras muebles encima y ves si caben.</p><button class="btn primary" type="button" data-act="newRoom">Crear estancia</button></div>`;
   const items=S.items.filter(i=>i.estanciaId===r.id);
   const bad=problems(items,r);
-  const es=!!S.editShape&&S.vista!=="3d", P=pts(r), BB=bbox(P), DR=es&&S.drawMode?Math.max(S.drawNew?800:600,Math.round(Math.max(BB.W,BB.L)*(S.drawNew?2.6:1.5)/50)*50,...(S.drawPts||[]).concat(S.drawRef||[]).flat().map(v=>Math.ceil((v+50)/50)*50)):0;
+  const es=!!S.editShape&&S.vista!=="3d", P=pts(r), BB=bbox(P), DR=es&&S.drawMode?Math.max(S.drawNew?800:600,Math.round(Math.max(BB.W,BB.L)*(S.drawNew?2.6:S.drawExt?2:1.5)/50)*50,...(S.drawPts||[]).concat(S.drawRef||[]).flat().map(v=>Math.ceil((v+50)/50)*50)):0;
   const W=DR||Math.max(BB.W,r.calco?.w||0), L=DR||Math.max(BB.L,r.calco?.l||0), pad=Math.max(40,Math.max(W,L)*.07), hs=Math.max(7,Math.max(W,L)/50);
   if(!S.migrating&&S.items.some(i=>i.estanciaId===r.id&&isFixedItem(i))) setTimeout(()=>migrateFixed(r.id),0);
   const sel=items.find(i=>i.id===S.sel);
@@ -4088,7 +4094,11 @@ document.addEventListener("click",e=>{
     case "editShape": S.editShape=true; S.paint=false; S.vista="2d"; S.sel=null; S.shapeSel=null; S.fixForm=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
     case "shapeDone": S.editShape=false; S.drawMode=false; S.drawPts=null; S.shapeSel=null; S.fixForm=null; S.holeForm=null; if(d.then==="doors") S.openCats.add("Puertas, ventanas y escaleras"); render(); if(d.then==="doors") setTimeout(()=>document.querySelector('.cat-d[data-cat="Puertas, ventanas y escaleras"]')?.scrollIntoView({behavior:"smooth",block:"center"}),60); break;
     case "fxSave": fxSave(r); break;
-    case "drawStart": { S.drawMode=true; S.drawNew=false; S.drawRef=null; S.drawSel=null; const P0=pts(r), B0=bbox(P0), D=Math.max(600,Math.round(Math.max(B0.W,B0.L)*1.5/50)*50), ox=Math.round((D-B0.W)/2/50)*50, oy=Math.round((D-B0.L)/2/50)*50;
+    case "extendFrom": { const k=S.shapeSel?.t==="v"?S.shapeSel.i:null; if(k==null) break;
+      const P0=pts(r), B0=bbox(P0), D=Math.max(600,Math.round(Math.max(B0.W,B0.L)*2/50)*50), ox=Math.round((D-B0.W)/2/50)*50, oy=Math.round((D-B0.L)/2/50)*50, Q=P0.map(([x,y])=>[x+ox,y+oy]);
+      S.drawMode=true; S.drawNew=false; S.drawRef=null; S.drawSel=null; S.shapeSel=null; S.drawOff={x:ox,y:oy}; S.drawPts=[...Q.slice(k+1),...Q.slice(0,k+1)]; S.drawExt=true;
+      render(); toast("Pincha hacia donde quieras llevar la pared. Para terminar, pincha el punto verde."); break; }
+    case "drawStart": { S.drawMode=true; S.drawNew=false; S.drawRef=null; S.drawSel=null; S.drawExt=false; const P0=pts(r), B0=bbox(P0), D=Math.max(600,Math.round(Math.max(B0.W,B0.L)*1.5/50)*50), ox=Math.round((D-B0.W)/2/50)*50, oy=Math.round((D-B0.L)/2/50)*50;
       S.drawPts=P0.map(([x,y])=>[x+ox,y+oy]); S.drawOff={x:ox,y:oy}; } S.fixForm=null; S.holeForm=null; S.shapeSel=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
     case "drawUndo": (S.drawPts||[]).pop(); render(); break;
     case "drawClear": S.drawPts=[]; S.drawSel=null; render(); break;
@@ -4096,9 +4106,9 @@ document.addEventListener("click",e=>{
     case "drawDelPt": if(S.drawSel!=null){ S.drawPts.splice(S.drawSel,1); S.drawSel=null; render(); } break;
     case "drawFrom": if(S.drawSel!=null){ const P=S.drawPts, k=S.drawSel; S.drawPts=[...P.slice(k+1),...P.slice(0,k+1)]; S.drawSel=null; render(); toast("Ahora sigues desde ese punto: pincha para añadir esquinas."); } break;
     case "drawNewRoom": { const P0=pts(r), B0=bbox(P0), D=Math.max(800,Math.round(Math.max(B0.W,B0.L)*2.6/50)*50), ox=Math.round((D-B0.W)/2/50)*50, oy=Math.round((D-B0.L)/2/50)*50;
-      S.editShape=true; S.drawMode=true; S.drawNew=true; S.drawPts=[]; S.drawSel=null; S.drawOff={x:ox,y:oy}; S.drawRef=P0.map(([x,y])=>[x+ox,y+oy]); S.fixForm=null; S.holeForm=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break; }
+      S.editShape=true; S.drawMode=true; S.drawNew=true; S.drawExt=false; S.drawPts=[]; S.drawSel=null; S.drawOff={x:ox,y:oy}; S.drawRef=P0.map(([x,y])=>[x+ox,y+oy]); S.fixForm=null; S.holeForm=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break; }
     case "drawClose": drawFinish(r); break;
-    case "drawCancel": S.drawMode=false; S.drawPts=null; S.drawOff=null; S.drawSel=null; S.drawRef=null; S.drawNew=false; render(); break;
+    case "drawCancel": S.drawMode=false; S.drawPts=null; S.drawOff=null; S.drawSel=null; S.drawRef=null; S.drawNew=false; S.drawExt=false; render(); break;
     case "hlSave": hlSave(r); break;
     case "hlCancel": S.holeForm=null; render(); break;
     case "fxCancel": S.fixForm=null; render(); break;
