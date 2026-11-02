@@ -590,6 +590,9 @@ s.old{color:var(--muted);font-size:.6em;font-weight:500;margin-left:4px}
 .wl-pop span{font-weight:600;color:var(--muted)}
 #drawLayer line,#drawLayer text,#drawLayer path{pointer-events:none}
 .vx-pop{position:absolute;z-index:6;display:flex;gap:6px;padding:6px;border-radius:12px;background:var(--surface);border:1px solid var(--blue);box-shadow:0 8px 22px rgb(35 64 126 / .22)}
+.canvas.ed .hint{position:static;display:block;margin-top:6px}
+.pt-note{align-self:center;font-size:12px;color:var(--muted);background:rgb(255 255 255 / .85);padding:3px 8px;border-radius:8px}
+@media (max-width:560px){ .pt-note{display:none} }
 .dxf-btn{background:var(--blue-soft);border-color:var(--blue);color:var(--blue-ink);font-weight:600}
 .re-tip{margin:4px 0 0;padding:8px 10px;border-radius:10px;background:var(--blue-soft);color:var(--blue-ink);font-size:13px}
 .fin-who{margin:0;padding:8px 10px;border-radius:10px;background:var(--blue-soft);color:var(--blue-ink);font-size:13px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -1544,10 +1547,14 @@ function constrain(it,nx,ny,r){
 function roomGeomSVG(P,pad,floorHex,o={}){
   const {W,L}=bbox(P), d="M"+P.map(p=>p.join(" ")).join("L")+"Z", r=o.r||{};
   const lines=[]; for(let x=50;x<W;x+=50) lines.push(`M${x} 0V${L}`); for(let y=50;y<L;y+=50) lines.push(`M0 ${y}H${W}`);
-  const fs=pad*.3;
+  const zf=o.z||1, fs0=Math.min(pad*.3,Math.max(12,Math.max(W,L)*.021))/zf;
+  const placed=[];
   const labels=P.map((p,i)=>{
-    const q=P[(i+1)%P.length], len=Math.hypot(q[0]-p[0],q[1]-p[1]); if(len<25) return "";
-    const [nx,ny]=inward(P,i), mx=(p[0]+q[0])/2-nx*pad*.5, my=(p[1]+q[1])/2-ny*pad*.5;
+    const q=P[(i+1)%P.length], len=Math.hypot(q[0]-p[0],q[1]-p[1]); if(len<(o.edit?3:25)) return "";
+    // en paredes cortas, letra algo más pequeña; si choca con otra medida, se aparta hacia fuera
+    const fs=len<fs0*4?fs0*.8:fs0, [nx,ny]=inward(P,i), R=fs*1.9; let off=pad*.5/zf, mx, my;
+    for(let k=0;k<8;k++){ mx=(p[0]+q[0])/2-nx*off; my=(p[1]+q[1])/2-ny*off; if(!placed.some(b=>Math.hypot(b[0]-mx,b[1]-my)<b[2]+R)) break; off+=fs*1.5; }
+    placed.push([mx,my,R]);
     let ang=Math.atan2(q[1]-p[1],q[0]-p[0])*180/Math.PI; if(ang>90) ang-=180; if(ang<=-90) ang+=180;
     const t=`<text transform="translate(${mx} ${my}) rotate(${ang})" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" style="fill:${o.edit?"#fff":"var(--blue-ink)"};font-weight:${o.edit?700:600}">${cm(Math.round(len))}</text>`;
     // al editar, la medida es un botón: se pulsa y se escribe
@@ -1563,7 +1570,7 @@ function roomGeomSVG(P,pad,floorHex,o={}){
       <mask id="wallMask" maskUnits="userSpaceOnUse" x="${-pad*3}" y="${-pad*3}" width="${W+pad*6}" height="${L+pad*6}"><rect x="${-pad*3}" y="${-pad*3}" width="${W+pad*6}" height="${L+pad*6}" fill="white"/><path d="${d}" fill="black"/></mask></defs>
     <path d="${d}" fill="var(--floor)"/>${/^#[0-9a-f]{6}$/i.test(floorHex||"")?`<path d="${d}" fill="${floorHex}" opacity=".22"/>`:""}
     <path d="${lines.join("")}" stroke="var(--grid)" stroke-width="1" fill="none" clip-path="url(#roomClip)"/>
-    <path d="${d}" fill="none" stroke="var(--wall)" stroke-width="24" stroke-linejoin="miter" stroke-miterlimit="8" mask="url(#wallMask)"/>
+    <path d="${d}" fill="none" stroke="var(--wall)" stroke-width="${Math.max(5,24/zf)}" stroke-linejoin="miter" stroke-miterlimit="8" mask="url(#wallMask)"/>
     <g${o.edit?"":' pointer-events="none"'}>${est}</g><g>${paint}</g>
     <g>${labels}</g>`;
 }
@@ -1571,7 +1578,8 @@ function shapeHandlesSVG(P,hs){
   const sel=S.shapeSel||{};
   return P.map((p,i)=>{ const q=P[(i+1)%P.length]; return `<line data-seg="${i}" x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" stroke="transparent" stroke-width="${hs*2.6}" style="cursor:copy"/>`; }).join("")
     +`<g id="segHover" pointer-events="none" style="display:none"><circle r="${hs*.85}" fill="var(--surface)" stroke="var(--red)" stroke-width="${hs*.22}"/><path d="M${-hs*.45} 0H${hs*.45}M0 ${-hs*.45}V${hs*.45}" stroke="var(--red)" stroke-width="${hs*.24}"/></g>`
-    +P.map((p,i)=>`<circle data-vtx="${i}" cx="${p[0]}" cy="${p[1]}" r="${hs}" fill="${sel.t==="v"&&sel.i===i?"var(--red)":"var(--surface)"}" stroke="var(--red)" stroke-width="${hs*.3}" style="cursor:move"/>`).join("");
+    +P.map((p,i)=>{ const a=P[(i-1+P.length)%P.length], b=P[(i+1)%P.length], near=Math.min(Math.hypot(p[0]-a[0],p[1]-a[1]),Math.hypot(p[0]-b[0],p[1]-b[1])), rv=Math.max(hs*.4,Math.min(hs,near*.35));
+      return `<circle data-vtx="${i}" cx="${p[0]}" cy="${p[1]}" r="${rv}" fill="${sel.t==="v"&&sel.i===i?"var(--red)":"var(--surface)"}" stroke="var(--red)" stroke-width="${rv*.3}" style="cursor:move"/>`; }).join("");
 }
 // Punto de la pared i más cercano a (x,y), redondeado a 5 cm
 function projSeg(P,i,x,y){ const p=P[i], q=P[(i+1)%P.length], dx=q[0]-p[0], dy=q[1]-p[1], L2=dx*dx+dy*dy||1, t=Math.max(.02,Math.min(.98,((x-p[0])*dx+(y-p[1])*dy)/L2));
@@ -1788,6 +1796,8 @@ function template(k,W,L){
 const saveShape=(r,P)=>held(()=>saveShape0(r,P));
 async function saveShape0(r,P){
   P=P.filter((p,i)=>{ const q=P[(i+1)%P.length]; return P.length<=3||Math.hypot(q[0]-p[0],q[1]-p[1])>=1; });
+  for(let i=0;P.length>3&&i<P.length;){ const a=P[(i-1+P.length)%P.length], p=P[i], b=P[(i+1)%P.length], cr=(p[0]-a[0])*(b[1]-p[1])-(p[1]-a[1])*(b[0]-p[0]), dt=(p[0]-a[0])*(b[0]-p[0])+(p[1]-a[1])*(b[1]-p[1]);
+    if(Math.abs(cr)<1e-6*Math.max(1,Math.hypot(p[0]-a[0],p[1]-a[1])*Math.hypot(b[0]-p[0],b[1]-p[1]))&&dt>0) P.splice(i,1); else i++; }
   if(P.length<3) return;
   const mx=Math.min(...P.map(p=>p[0])), my=Math.min(...P.map(p=>p[1]));
   if(mx||my){
@@ -1810,7 +1820,13 @@ function bindShape(r){
   const pad=+svg.dataset.pad, hs=+svg.dataset.hs;
   let drag=null;
   if(S.drawMode){ bindDraw(r); return; }
-  const redraw=P=>{ $("roomGeom").innerHTML=roomGeomSVG(P,pad,r.sueloColor||DEF_FIN.sueloColor,{r,edit:true}); $("shapeLayer").innerHTML=shapeHandlesSVG(P,hs); };
+  svg.addEventListener("wheel",e=>{ e.preventDefault(); const c=toCm(e), z0=S.zoom||1, z=Math.max(1,Math.min(12,z0*(e.deltaY<0?1.25:.8))); if(z===z0) return;
+    const vb=svg.viewBox.baseVal, cx=vb.x+vb.width/2, cy=vb.y+vb.height/2; S.zoomC={x:c.x+(cx-c.x)*z0/z,y:c.y+(cy-c.y)*z0/z}; S.zoom=z; if(z===1) S.zoomC=null; render(); },{passive:false});
+  let pan=null;
+  svg.addEventListener("pointerdown",e=>{ if((S.zoom||1)<=1||e.target.closest("[data-vtx],[data-wlen],[data-est],[data-seg]")) return; const vb=svg.viewBox.baseVal; pan={sx:e.clientX,sy:e.clientY,cx:vb.x+vb.width/2,cy:vb.y+vb.height/2,k:vb.width/svg.getBoundingClientRect().width}; svg.setPointerCapture(e.pointerId); });
+  svg.addEventListener("pointermove",e=>{ if(!pan) return; S.zoomC={x:pan.cx-(e.clientX-pan.sx)*pan.k,y:pan.cy-(e.clientY-pan.sy)*pan.k}; const vb=svg.viewBox.baseVal; vb.x=S.zoomC.x-vb.width/2; vb.y=S.zoomC.y-vb.height/2; });
+  svg.addEventListener("pointerup",()=>{ if(pan){ pan=null; render(); } });
+  const redraw=P=>{ $("roomGeom").innerHTML=roomGeomSVG(P,pad,r.sueloColor||DEF_FIN.sueloColor,{r,edit:true,z:+svg.dataset.z||1}); $("shapeLayer").innerHTML=shapeHandlesSVG(P,hs); };
   svg.addEventListener("pointerdown",e=>{
     const v=e.target.closest("[data-vtx]"), wl=e.target.closest("[data-wlen]"), es=e.target.closest("[data-est]");
     const P=pts(r).map(p=>[...p]);
@@ -1846,7 +1862,10 @@ function planHTML(p,r){
   const items=S.items.filter(i=>i.estanciaId===r.id);
   const bad=problems(items,r);
   const es=!!S.editShape&&S.vista!=="3d", P=pts(r), BB=bbox(P), DR=es&&S.drawMode?Math.max(S.drawNew?800:600,Math.round(Math.max(BB.W,BB.L)*(S.drawNew?2.6:S.drawExt?2:1.5)/50)*50,...(S.drawPts||[]).concat(S.drawRef||[]).flat().map(v=>Math.ceil((v+50)/50)*50)):0;
-  const W=DR||Math.max(BB.W,r.calco?.w||0), L=DR||Math.max(BB.L,r.calco?.l||0), pad=Math.max(40,Math.max(W,L)*.07), hs=Math.max(7,Math.max(W,L)/50);
+  const W=DR||Math.max(BB.W,r.calco?.w||0), L=DR||Math.max(BB.L,r.calco?.l||0), pad=Math.max(es?60:40,Math.max(W,L)*(es?.13:.07)), Z=es&&!S.drawMode?Math.max(1,S.zoom||1):1, hs=Math.max(7,Math.max(W,L)/50)/Z;
+  // zoom al editar: se acerca alrededor de S.zoomC sin salirse del plano
+  const VB=(()=>{ const vx=-pad, vy=-pad, vw=W+pad*2, vh=L+pad*2; if(Z<=1) return [vx,vy,vw,vh]; const w=vw/Z, h=vh/Z, c=S.zoomC||{x:W/2,y:L/2};
+    const mx=w*.4, my=h*.4; return [Math.max(vx-mx,Math.min(vx+vw-w+mx,c.x-w/2)),Math.max(vy-my,Math.min(vy+vh-h+my,c.y-h/2)),w,h]; })();
   if(!S.migrating&&S.items.some(i=>i.estanciaId===r.id&&isFixedItem(i))) setTimeout(()=>migrateFixed(r.id),0);
   const sel=items.find(i=>i.id===S.sel);
   const myProds=S.productos.filter(x=>x.proyectoId===p.id&&+x.ancho>0&&+x.fondo>0&&x.estado!=="descartado");
@@ -1854,10 +1873,11 @@ function planHTML(p,r){
   const v3=S.vista==="3d";
   return `<div class="toolbar">${chips}<div class="tb-right">${es?"":`<button class="btn primary sm" type="button" data-act="newProdHere">＋ Crear producto</button>`}<div class="seg" role="group" aria-label="Vista"><button type="button" data-vista="2d" aria-pressed="${!v3}">2D</button><button type="button" data-vista="3d" aria-pressed="${v3}">3D</button></div>${es?"":`<button class="btn sm pal${S.paint?" on":""}" type="button" data-act="finishes" title="Color y material de paredes y suelo"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.9 1.8-1.9 0-.5-.2-.9-.5-1.3-.3-.3-.5-.8-.5-1.3 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.3" fill="#F86C2F" stroke="none"/><circle cx="10" cy="7" r="1.3" fill="#8DB6C7" stroke="none"/><circle cx="14.5" cy="7" r="1.3" fill="#6D0101" stroke="none"/><circle cx="17.5" cy="10.5" r="1.3" fill="#9DAF8A" stroke="none"/></svg><span>Paredes y suelo</span></button><button class="btn sm room-btn" type="button" data-act="editShape" title="Medidas, paredes, vigas y columnas de la estancia"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V3h18v18z"/><path d="M3 9h6V3M15 21v-6h6"/></svg><span>Editar estancia</span></button>`}</div></div>
   <div class="planner">
-    <div class="plan-main"><div class="canvas">
+    <div class="plan-main"><div class="canvas${es?" ed":""}">
+      ${es&&!S.drawMode&&!v3?`<div class="plan-tools"><button class="pt-btn" type="button" data-zoom="1.6" title="Acercar">＋</button><button class="pt-btn" type="button" data-zoom="0.625" title="Alejar"${Z<=1?" disabled":""}>－</button>${Z>1?`<button class="pt-btn" type="button" data-zoom="0" title="Ver la estancia entera">⤢ Ver todo</button>`:""}<span class="pt-note">Rueda del ratón o pellizca para acercar · arrastra el fondo para moverte</span></div>`:""}
       ${es?"":`<div class="plan-tools"><button class="pt-btn" type="button" data-act="undo"${S.hist.length?"":" disabled"} title="Deshacer el último cambio (Ctrl+Z)"><span aria-hidden="true">↶</span> Deshacer</button><button class="pt-btn${S.human?" on":""}" type="button" data-act="human" title="Ver si cabes: distancias para pasar y vista a la altura de los ojos"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2.5"/><path d="M12 8v7M8 10.5l4-1.5 4 1.5M9.5 22l2.5-7 2.5 7"/></svg><span>Persona</span></button><button class="pt-btn${S.dims?" on":""}" type="button" data-act="dims" title="Mostrar las medidas: espacio libre entre muebles y paredes"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17 17 3l4 4L7 21z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/></svg><span>Medidas</span></button>${S.human&&v3?`<div class="seg pt-seg" role="group" aria-label="Cómo te ves"><button type="button" data-hview="1" aria-pressed="${S.hview==="1"}">👁 1ª persona</button><button type="button" data-hview="3" aria-pressed="${S.hview!=="1"}">🧍‍♀️ 3ª persona</button></div>`:""}${(()=>{ const n=items.filter(i=>i.bloq).length; return n>1?`<button class="pt-btn" type="button" data-act="unlockAll" title="Desbloquear todos los muebles bloqueados de esta estancia">${UNLOCK_SVG}<span>Desbloquear (${n})</span></button>`:""; })()}</div>`}
-      ${v3?`<div id="view3d"></div><span class="hint">Arrastra el fondo para girar la vista · pellizca o usa la rueda para acercar · arrastra un mueble para moverlo</span>`:`<svg id="plan" data-pad="${pad}" data-hs="${hs}" data-d="${DR}" viewBox="${-pad} ${-pad} ${W+pad*2} ${L+pad*2}" role="img" aria-label="Plano de ${esc(r.nombre)}">
-        <g id="roomGeom">${S.drawMode&&es?drawBgSVG(DR):roomGeomSVG(P,pad,r.sueloColor||DEF_FIN.sueloColor,{r,edit:es,paint:S.paint&&!es})}</g>${r.calco?`<g id="calco" opacity=".55" pointer-events="none">${calcoSVG(r.calco)}</g>`:""}
+      ${v3?`<div id="view3d"></div><span class="hint">Arrastra el fondo para girar la vista · pellizca o usa la rueda para acercar · arrastra un mueble para moverlo</span>`:`<svg id="plan" data-pad="${pad}" data-hs="${hs}" data-d="${DR}" viewBox="${VB.join(" ")}" data-z="${Z}" role="img" aria-label="Plano de ${esc(r.nombre)}">
+        <g id="roomGeom">${S.drawMode&&es?drawBgSVG(DR):roomGeomSVG(P,pad,r.sueloColor||DEF_FIN.sueloColor,{r,edit:es,paint:S.paint&&!es,z:Z})}</g>${r.calco?`<g id="calco" opacity=".55" pointer-events="none">${calcoSVG(r.calco)}</g>`:""}
         <g id="itemsLayer"${es?' class="es-dim" style="pointer-events:none"':""}${es&&S.drawMode&&S.drawOff?` transform="translate(${S.drawOff.x} ${S.drawOff.y})"`:""}>${[...items].sort((a,b)=>(a.tipo==="alfombra"||/alfombra/i.test(a.nombre)?-1:0)-(b.tipo==="alfombra"||/alfombra/i.test(b.nombre)?-1:0)).map(i=>itemSVG(i,bad.has(i.id))).join("")}</g>
         ${(S.human||S.dims)&&!es?`<g id="humanLayer">${humanSVG(r,items)}</g>`:""}
         ${es&&S.drawMode?`<g id="drawLayer">${drawLayerSVG(DR,hs)}</g>`:es?`<g id="shapeLayer">${shapeHandlesSVG(P,hs)}</g>`:""}
@@ -4012,7 +4032,7 @@ $("d_url").addEventListener("input",()=>{ clearTimeout(onProdUrl.t); onProdUrl.t
 document.addEventListener("click",e=>{
   if(e.target.closest("summary button")) e.preventDefault();
   document.querySelectorAll("details.menu[open]").forEach(m=>{ if(!m.contains(e.target)||e.target.closest(".menu-p button")) m.open=false; });
-  const t=e.target.closest("[data-act],[data-tab],[data-room],[data-addgen],[data-addprod],[data-editprod],[data-place],[data-choose],[data-edittask],[data-cycle],[data-editcont],[data-color],[data-vista],[data-addopt],[data-tpl],[data-editgasto],[data-dellist],[data-editlist],[data-wall],[data-wallreset],[data-cj2list],[data-gocj],[data-goprod],[data-photo],[data-rmfoto],[data-editmed],[data-copymed],[data-rotby],[data-zby],[data-zto],[data-hex2],[data-cam],[data-addcat],[data-fxnew],[data-fxedit],[data-fxdel],[data-hview],[data-addn],[data-qty],[data-cmppick],[data-cmpclear],[data-budget],[data-shcopy],[data-shsend],[data-shimport],[data-shstop],[data-shleave],[data-shopen],[data-hlnew],[data-hledit],[data-pc],[data-pt],[data-st],[data-sc],[data-view],[data-rotto],[data-proj],[data-openbud],[data-editcj],[data-qadd],[data-elchk],[data-eledit],[data-placecj],[data-addcj],[data-dupcj]");
+  const t=e.target.closest("[data-act],[data-tab],[data-room],[data-addgen],[data-addprod],[data-editprod],[data-place],[data-choose],[data-edittask],[data-cycle],[data-editcont],[data-color],[data-vista],[data-addopt],[data-tpl],[data-editgasto],[data-dellist],[data-editlist],[data-wall],[data-wallreset],[data-cj2list],[data-gocj],[data-goprod],[data-photo],[data-rmfoto],[data-editmed],[data-copymed],[data-rotby],[data-zby],[data-zto],[data-hex2],[data-cam],[data-addcat],[data-fxnew],[data-fxedit],[data-fxdel],[data-zoom],[data-hview],[data-addn],[data-qty],[data-cmppick],[data-cmpclear],[data-budget],[data-shcopy],[data-shsend],[data-shimport],[data-shstop],[data-shleave],[data-shopen],[data-hlnew],[data-hledit],[data-pc],[data-pt],[data-st],[data-sc],[data-view],[data-rotto],[data-proj],[data-openbud],[data-editcj],[data-qadd],[data-elchk],[data-eledit],[data-placecj],[data-addcj],[data-dupcj]");
   if(!t) return;
   const p=proyecto(), r=p&&room(p), d=t.dataset;
   if(d.tpl){ const P0=pts(r), {W,L}=bbox(P0); S.shapeSel=null; saveShape(r,template(d.tpl,W,L)); return; }
@@ -4020,6 +4040,7 @@ document.addEventListener("click",e=>{
   if(d.tab){ S.editShape=false; S.view="proyecto"; S.tab=d.tab; window.scrollTo(0,0); lsSet("proletix:tab",S.tab); render(); return; }
   if(d.room){ S.roomId=d.room; S.sel=null; S.editShape=false; S.shapeSel=null; render(); return; }
   if(d.cam){ moveCam(d.cam); return; }
+  if(d.zoom!=null){ const f=+d.zoom; if(!f){ S.zoom=1; S.zoomC=null; } else { const svg=$("plan"), vb=svg?.viewBox.baseVal; if(vb) S.zoomC=S.zoomC||{x:vb.x+vb.width/2,y:vb.y+vb.height/2}; S.zoom=Math.max(1,Math.min(12,(S.zoom||1)*f)); if(S.zoom===1) S.zoomC=null; } render(); return; }
   if(d.hview){ S.hview=d.hview; V.fp=null; render(); return; }
   if(d.budget){ budToggle(d.budget); return; }
   if(d.qty){ const [id,dl]=d.qty.split("|"); qtyChange(id,+dl); return; }
@@ -4092,7 +4113,7 @@ document.addEventListener("click",e=>{
     case "newProd": S.addFromPlan=null; openProd(null,{estanciaId:""}); break;
     case "newTask": openTask(null); break;
     case "editShape": S.editShape=true; S.paint=false; S.vista="2d"; S.sel=null; S.shapeSel=null; S.fixForm=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
-    case "shapeDone": S.editShape=false; S.drawMode=false; S.drawPts=null; S.shapeSel=null; S.fixForm=null; S.holeForm=null; if(d.then==="doors") S.openCats.add("Puertas, ventanas y escaleras"); render(); if(d.then==="doors") setTimeout(()=>document.querySelector('.cat-d[data-cat="Puertas, ventanas y escaleras"]')?.scrollIntoView({behavior:"smooth",block:"center"}),60); break;
+    case "shapeDone": S.zoom=1; S.zoomC=null; S.editShape=false; S.drawMode=false; S.drawPts=null; S.shapeSel=null; S.fixForm=null; S.holeForm=null; if(d.then==="doors") S.openCats.add("Puertas, ventanas y escaleras"); render(); if(d.then==="doors") setTimeout(()=>document.querySelector('.cat-d[data-cat="Puertas, ventanas y escaleras"]')?.scrollIntoView({behavior:"smooth",block:"center"}),60); break;
     case "fxSave": fxSave(r); break;
     case "extendFrom": { const k=S.shapeSel?.t==="v"?S.shapeSel.i:null; if(k==null) break;
       const P0=pts(r), B0=bbox(P0), D=Math.max(600,Math.round(Math.max(B0.W,B0.L)*2/50)*50), ox=Math.round((D-B0.W)/2/50)*50, oy=Math.round((D-B0.L)/2/50)*50, Q=P0.map(([x,y])=>[x+ox,y+oy]);
