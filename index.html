@@ -1564,13 +1564,19 @@ function roomGeomSVG(P,pad,floorHex,o={}){
 }
 function shapeHandlesSVG(P,hs){
   const sel=S.shapeSel||{};
-  return P.map((p,i)=>`<circle data-vtx="${i}" cx="${p[0]}" cy="${p[1]}" r="${hs}" fill="${sel.t==="v"&&sel.i===i?"var(--red)":"var(--surface)"}" stroke="var(--red)" stroke-width="${hs*.3}" style="cursor:move"/>`).join("");
+  return P.map((p,i)=>{ const q=P[(i+1)%P.length]; return `<line data-seg="${i}" x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" stroke="transparent" stroke-width="${hs*2.6}" style="cursor:copy"/>`; }).join("")
+    +`<g id="segHover" pointer-events="none" style="display:none"><circle r="${hs*.85}" fill="var(--surface)" stroke="var(--red)" stroke-width="${hs*.22}"/><path d="M${-hs*.45} 0H${hs*.45}M0 ${-hs*.45}V${hs*.45}" stroke="var(--red)" stroke-width="${hs*.24}"/></g>`
+    +P.map((p,i)=>`<circle data-vtx="${i}" cx="${p[0]}" cy="${p[1]}" r="${hs}" fill="${sel.t==="v"&&sel.i===i?"var(--red)":"var(--surface)"}" stroke="var(--red)" stroke-width="${hs*.3}" style="cursor:move"/>`).join("");
 }
+// Punto de la pared i más cercano a (x,y), redondeado a 5 cm
+function projSeg(P,i,x,y){ const p=P[i], q=P[(i+1)%P.length], dx=q[0]-p[0], dy=q[1]-p[1], L2=dx*dx+dy*dy||1, t=Math.max(.02,Math.min(.98,((x-p[0])*dx+(y-p[1])*dy)/L2));
+  return [Math.round((p[0]+dx*t)/5)*5,Math.round((p[1]+dy*t)/5)*5]; }
 // Dibujar la forma pinchando las esquinas (como en los Sims): paredes rectas y medidas al momento
+function drawBgSVG(D){ const g=[]; for(let x=0;x<=D;x+=50) g.push(`M${x} 0V${D}`); for(let y=0;y<=D;y+=50) g.push(`M0 ${y}H${D}`); return `<rect x="0" y="0" width="${D}" height="${D}" fill="var(--floor)"/><path d="${g.join("")}" stroke="var(--grid)" stroke-width="1"/>`; }
 function drawLayerSVG(D,hs,prev){
   const pts0=S.drawPts||[], g=[]; for(let x=0;x<=D;x+=50) g.push(`M${x} 0V${D}`); for(let y=0;y<=D;y+=50) g.push(`M0 ${y}H${D}`);
   const fs=hs*1.6, seg=(a,b,cls)=>{ const len=Math.round(Math.hypot(b[0]-a[0],b[1]-a[1])); return `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="var(--wall)" stroke-width="${cls?6:14}"${cls?' stroke-dasharray="10 8"':""} stroke-linecap="round"/>${len>=20?`<text x="${(a[0]+b[0])/2}" y="${(a[1]+b[1])/2-hs*1.4}" font-size="${fs}" text-anchor="middle" style="fill:var(--blue-ink);font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:${fs*.3}px">${cm(len)}</text>`:""}`; };
-  let out=`<rect x="0" y="0" width="${D}" height="${D}" fill="var(--floor)"/><path d="${g.join("")}" stroke="var(--grid)" stroke-width="1"/>`;
+  let out="";
   for(let i=1;i<pts0.length;i++) out+=seg(pts0[i-1],pts0[i]);
   if(prev&&pts0.length) out+=seg(pts0[pts0.length-1],prev,1);
   out+=pts0.map((p,i)=>`<circle cx="${p[0]}" cy="${p[1]}" r="${i===0?hs*1.5:hs*.8}" fill="${i===0?"var(--ok)":"var(--wall)"}" stroke="#fff" stroke-width="${hs*.3}"/>`).join("");
@@ -1595,7 +1601,7 @@ function bindDraw(r){
 }
 function drawFinish(r){
   const P=S.drawPts||[]; if(P.length<3){ toast("Pon al menos tres esquinas."); return; }
-  S.drawMode=false; S.drawPts=null; saveShape(r,P.map(p=>[...p])); toast("Forma guardada. Pulsa una medida del plano para ajustarla.");
+  const o=S.drawOff||{x:0,y:0}; S.drawMode=false; S.drawPts=null; S.drawOff=null; saveShape(r,P.map(p=>[p[0]-o.x,p[1]-o.y])); toast("Forma guardada. Pulsa una medida del plano para ajustarla.");
 }
 // Pulsar una medida del plano: aparece un recuadro para escribir la nueva
 function wallEdit(r,i,e){
@@ -1619,8 +1625,8 @@ function shapePanel(r,P){
   const holes=S.items.filter(i=>i.estanciaId===r.id&&isHueco(i)), est=r.estructura||[];
   const estName=e=>({viga:"Viga",pilar:"Columna",tabique:"Tabique"})[e.tipo]||"Elemento";
   if(S.drawMode) return `<div class="panel room-ed"><div class="ph"><h3>Dibujar la forma</h3></div>
-    <ol class="sh-steps"><li>Pincha en el plano donde va <b>cada esquina</b>, una detrás de otra. Las paredes salen rectas solas.</li><li>Para terminar, pincha en el <b style="color:var(--ok)">primer punto verde</b> o pulsa «Cerrar la forma».</li><li>Después, pulsa cualquier medida azul para escribir lo que mide de verdad.</li></ol>
-    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary sm" type="button" id="drawClose" data-act="drawClose"${(S.drawPts||[]).length<3?" disabled":""}>Cerrar la forma</button><button class="btn sm" type="button" id="drawUndo" data-act="drawUndo"${(S.drawPts||[]).length?"":" disabled"}>↶ Quitar el último punto</button><button class="btn ghost sm" type="button" data-act="drawCancel">Cancelar</button></div></div>`;
+    <ol class="sh-steps"><li>Sigues desde la forma que ya tenías: pincha en el plano para <b>añadir esquinas</b> a continuación del último punto. Las paredes salen rectas solas.</li><li>Para terminar, pincha en el <b style="color:var(--ok)">primer punto verde</b> o pulsa «Cerrar la forma». Si prefieres empezar de nuevo, «Borrar y empezar de cero».</li><li>Después, pulsa cualquier medida azul para escribir lo que mide de verdad.</li></ol>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary sm" type="button" id="drawClose" data-act="drawClose"${(S.drawPts||[]).length<3?" disabled":""}>Cerrar la forma</button><button class="btn sm" type="button" id="drawUndo" data-act="drawUndo"${(S.drawPts||[]).length?"":" disabled"}>↶ Quitar el último punto</button><button class="btn sm danger" type="button" data-act="drawClear"${(S.drawPts||[]).length?"":" disabled"}>🗑 Borrar y empezar de cero</button><button class="btn ghost sm" type="button" data-act="drawCancel">Cancelar</button></div></div>`;
   let form="";
   if(f){
     const el=f.eid!=null&&est.find(x=>String(x.id)===String(f.eid)), t=f.tipo, horiz=f.dir?f.dir==="h":true, v=k=>f[k]??"";
@@ -1643,7 +1649,7 @@ function shapePanel(r,P){
       <button class="btn primary" type="button" data-act="drawStart" style="align-self:flex-start">✏️ Dibujar la forma</button>
       <p class="muted" style="margin:0;font-size:13px">O empieza desde una forma típica:</p>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${[["rect","▭ Rectangular"],["L","⌐ En L"],["U","⊔ En U"],["chaflan","⬠ Con chaflán"]].map(([k,n])=>`<button class="btn sm" type="button" data-tpl="${k}"${k==="rect"&&rect?' aria-pressed="true"':""}>${n}</button>`).join("")}</div>
-      ${S.shapeSel?.t==="v"&&P[S.shapeSel.i]?`<button class="btn sm danger" type="button" data-act="delVtx"${P.length<=3?" disabled":""}>Quitar la esquina seleccionada</button>`:`<p class="muted" style="margin:0;font-size:12px">También puedes arrastrar las esquinas naranjas.</p>`}
+      ${S.shapeSel?.t==="v"&&P[S.shapeSel.i]?`<button class="btn sm danger" type="button" data-act="delVtx"${P.length<=3?" disabled":""}>Quitar la esquina seleccionada</button>`:`<p class="muted" style="margin:0;font-size:12px">Arrastra las esquinas naranjas. Para <b>añadir una esquina</b>, pincha en la pared justo donde la quieres y arrastra.</p>`}
     </section>
     <section class="re-s"><h4>3 · Columnas, vigas y tabiques</h4>
       <p class="muted" style="margin:0;font-size:13px">Forman parte de las paredes: se ven del color de la pared y los muebles no pueden ocupar su sitio. Púlsalos en el plano para cambiarlos.</p>
@@ -1783,13 +1789,18 @@ function bindShape(r){
     const P=pts(r).map(p=>[...p]);
     if(wl){ e.preventDefault(); wallEdit(r,+wl.dataset.wlen,e); return; }
     if(es){ const el=(r.estructura||[]).find(x=>String(x.id)===es.dataset.est); if(el) fxOpen(r,el.tipo,el); return; }
+    const sgl=e.target.closest("[data-seg]");
+    if(sgl){ // nuevo punto justo donde pinchas en la pared, y se puede arrastrar ya
+      e.preventDefault(); const i=+sgl.dataset.seg, c=toCm(e), np=projSeg(P,i,c.x,c.y); P.splice(i+1,0,np);
+      S.shapeSel={t:"v",i:i+1}; drag={i:i+1,P,moved:true}; S.dragging=true; S.tmpPts={id:r.id,P}; svg.setPointerCapture(e.pointerId); redraw(P); return; }
     const sg=null;
     if(v){ e.preventDefault(); const i=+v.dataset.vtx; S.shapeSel={t:"v",i}; drag={i,P,moved:false}; S.dragging=true; svg.setPointerCapture(e.pointerId); redraw(P); return; }
     if(sg){ S.shapeSel={t:"s",i:+sg.dataset.seg}; render(); setTimeout(()=>$("sh_len")?.select(),30); return; }
     if(S.shapeSel){ S.shapeSel=null; render(); }
   });
   svg.addEventListener("pointermove",e=>{
-    if(!drag) return; const c=toCm(e), P=drag.P, n=P.length;
+    if(!drag){ const sh=$("segHover"), sgl=e.target.closest?.("[data-seg]"); if(sh){ if(sgl){ const c=toCm(e), q=projSeg(pts(r),+sgl.dataset.seg,c.x,c.y); sh.setAttribute("transform",`translate(${q[0]} ${q[1]})`); sh.style.display=""; } else sh.style.display="none"; } return; }
+    const c=toCm(e), P=drag.P, n=P.length;
     let x=Math.round(c.x/5)*5, y=Math.round(c.y/5)*5;
     for(const o of [P[(drag.i-1+n)%n],P[(drag.i+1)%n]]){ if(Math.abs(x-o[0])<12) x=o[0]; if(Math.abs(y-o[1])<12) y=o[1]; }
     if(x===P[drag.i][0]&&y===P[drag.i][1]) return;
@@ -1806,7 +1817,7 @@ function planHTML(p,r){
   if(!r) return `<div class="toolbar">${chips}</div><div class="blank"><h2>Dibuja tu primera estancia</h2><p>Solo necesitas el ancho y el largo en centímetros. Después arrastras muebles encima y ves si caben.</p><button class="btn primary" type="button" data-act="newRoom">Crear estancia</button></div>`;
   const items=S.items.filter(i=>i.estanciaId===r.id);
   const bad=problems(items,r);
-  const es=!!S.editShape&&S.vista!=="3d", P=pts(r), BB=bbox(P), DR=es&&S.drawMode?Math.max(600,Math.round(Math.max(BB.W,BB.L)*1.5/50)*50):0;
+  const es=!!S.editShape&&S.vista!=="3d", P=pts(r), BB=bbox(P), DR=es&&S.drawMode?Math.max(600,Math.round(Math.max(BB.W,BB.L)*1.5/50)*50,...(S.drawPts||[]).flat().map(v=>Math.ceil((v+50)/50)*50)):0;
   const W=DR||Math.max(BB.W,r.calco?.w||0), L=DR||Math.max(BB.L,r.calco?.l||0), pad=Math.max(40,Math.max(W,L)*.07), hs=Math.max(7,Math.max(W,L)/50);
   if(!S.migrating&&S.items.some(i=>i.estanciaId===r.id&&isFixedItem(i))) setTimeout(()=>migrateFixed(r.id),0);
   const sel=items.find(i=>i.id===S.sel);
@@ -1818,8 +1829,8 @@ function planHTML(p,r){
     <div class="plan-main"><div class="canvas">
       ${es?"":`<div class="plan-tools"><button class="pt-btn" type="button" data-act="undo"${S.hist.length?"":" disabled"} title="Deshacer el último cambio (Ctrl+Z)"><span aria-hidden="true">↶</span> Deshacer</button><button class="pt-btn${S.human?" on":""}" type="button" data-act="human" title="Ver si cabes: distancias para pasar y vista a la altura de los ojos"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2.5"/><path d="M12 8v7M8 10.5l4-1.5 4 1.5M9.5 22l2.5-7 2.5 7"/></svg><span>Persona</span></button>${(()=>{ const n=items.filter(i=>i.bloq).length; return n>1?`<button class="pt-btn" type="button" data-act="unlockAll" title="Desbloquear todos los muebles bloqueados de esta estancia">${UNLOCK_SVG}<span>Desbloquear (${n})</span></button>`:""; })()}</div>`}
       ${v3?`<div id="view3d"></div><span class="hint">Arrastra el fondo para girar la vista · pellizca o usa la rueda para acercar · arrastra un mueble para moverlo</span>`:`<svg id="plan" data-pad="${pad}" data-hs="${hs}" data-d="${DR}" viewBox="${-pad} ${-pad} ${W+pad*2} ${L+pad*2}" role="img" aria-label="Plano de ${esc(r.nombre)}">
-        <g id="roomGeom">${S.drawMode&&es?"":roomGeomSVG(P,pad,r.sueloColor||DEF_FIN.sueloColor,{r,edit:es,paint:S.paint&&!es})}</g>${r.calco?`<g id="calco" opacity=".55" pointer-events="none">${calcoSVG(r.calco)}</g>`:""}
-        <g id="itemsLayer"${es?' class="es-dim" style="pointer-events:none"':""}>${[...items].sort((a,b)=>(a.tipo==="alfombra"||/alfombra/i.test(a.nombre)?-1:0)-(b.tipo==="alfombra"||/alfombra/i.test(b.nombre)?-1:0)).map(i=>itemSVG(i,bad.has(i.id))).join("")}</g>
+        <g id="roomGeom">${S.drawMode&&es?drawBgSVG(DR):roomGeomSVG(P,pad,r.sueloColor||DEF_FIN.sueloColor,{r,edit:es,paint:S.paint&&!es})}</g>${r.calco?`<g id="calco" opacity=".55" pointer-events="none">${calcoSVG(r.calco)}</g>`:""}
+        <g id="itemsLayer"${es?' class="es-dim" style="pointer-events:none"':""}${es&&S.drawMode&&S.drawOff?` transform="translate(${S.drawOff.x} ${S.drawOff.y})"`:""}>${[...items].sort((a,b)=>(a.tipo==="alfombra"||/alfombra/i.test(a.nombre)?-1:0)-(b.tipo==="alfombra"||/alfombra/i.test(b.nombre)?-1:0)).map(i=>itemSVG(i,bad.has(i.id))).join("")}</g>
         ${S.human&&!es?`<g id="humanLayer">${humanSVG(r,items)}</g>`:""}
         ${es&&S.drawMode?`<g id="drawLayer">${drawLayerSVG(DR,hs)}</g>`:es?`<g id="shapeLayer">${shapeHandlesSVG(P,hs)}</g>`:""}
       </svg>
@@ -4016,10 +4027,12 @@ document.addEventListener("click",e=>{
     case "editShape": S.editShape=true; S.paint=false; S.vista="2d"; S.sel=null; S.shapeSel=null; S.fixForm=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
     case "shapeDone": S.editShape=false; S.drawMode=false; S.drawPts=null; S.shapeSel=null; S.fixForm=null; S.holeForm=null; if(d.then==="doors") S.openCats.add("Puertas, ventanas y escaleras"); render(); if(d.then==="doors") setTimeout(()=>document.querySelector('.cat-d[data-cat="Puertas, ventanas y escaleras"]')?.scrollIntoView({behavior:"smooth",block:"center"}),60); break;
     case "fxSave": fxSave(r); break;
-    case "drawStart": S.drawMode=true; S.drawPts=[]; S.fixForm=null; S.holeForm=null; S.shapeSel=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
+    case "drawStart": { S.drawMode=true; const P0=pts(r), B0=bbox(P0), D=Math.max(600,Math.round(Math.max(B0.W,B0.L)*1.5/50)*50), ox=Math.round((D-B0.W)/2/50)*50, oy=Math.round((D-B0.L)/2/50)*50;
+      S.drawPts=P0.map(([x,y])=>[x+ox,y+oy]); S.drawOff={x:ox,y:oy}; } S.fixForm=null; S.holeForm=null; S.shapeSel=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
     case "drawUndo": (S.drawPts||[]).pop(); render(); break;
+    case "drawClear": S.drawPts=[]; render(); break;
     case "drawClose": drawFinish(r); break;
-    case "drawCancel": S.drawMode=false; S.drawPts=null; render(); break;
+    case "drawCancel": S.drawMode=false; S.drawPts=null; S.drawOff=null; render(); break;
     case "hlSave": hlSave(r); break;
     case "hlCancel": S.holeForm=null; render(); break;
     case "fxCancel": S.fixForm=null; render(); break;
