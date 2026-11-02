@@ -578,6 +578,9 @@ s.old{color:var(--muted);font-size:.6em;font-weight:500;margin-left:4px}
 #humanLayer .human circle{fill:#F3C9A8;stroke:#23407E;stroke-width:2}
 #humanLayer .human path{fill:#23407E}
 #humanLayer .human.no ellipse{fill:var(--bad)}
+.pt-seg{height:38px;box-shadow:0 4px 14px rgb(35 64 126 / .16);background:rgb(255 255 255 / .94);border-radius:999px;overflow:hidden}
+.pt-seg button{font-size:13px;padding:0 12px}
+.canvas:has(.hu-leg) .hint{display:none}
 .hu-leg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--ink);padding:6px 4px 0}
 .hu-leg span{display:inline-flex;align-items:center;gap:5px}.hu-leg i{width:12px;height:12px;border-radius:3px;display:inline-block}
 .hu-leg i.ok{background:var(--ok)}.hu-leg i.mid{background:#D98A00}.hu-leg i.bad{background:var(--bad)}
@@ -585,6 +588,7 @@ s.old{color:var(--muted);font-size:.6em;font-weight:500;margin-left:4px}
 .wl-pop{position:absolute;z-index:6;display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:12px;background:var(--surface);border:2px solid var(--blue-ink);box-shadow:0 8px 24px rgb(35 64 126 / .25)}
 .wl-pop input{width:80px;padding:6px 8px;font-size:18px;font-weight:700;text-align:right}
 .wl-pop span{font-weight:600;color:var(--muted)}
+#drawLayer line,#drawLayer text,#drawLayer path{pointer-events:none}
 .dxf-btn{background:var(--blue-soft);border-color:var(--blue);color:var(--blue-ink);font-weight:600}
 .re-tip{margin:4px 0 0;padding:8px 10px;border-radius:10px;background:var(--blue-soft);color:var(--blue-ink);font-size:13px}
 .fin-who{margin:0;padding:8px 10px;border-radius:10px;background:var(--blue-soft);color:var(--blue-ink);font-size:13px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -1577,10 +1581,13 @@ function drawLayerSVG(D,hs,prev){
   const pts0=S.drawPts||[], g=[]; for(let x=0;x<=D;x+=50) g.push(`M${x} 0V${D}`); for(let y=0;y<=D;y+=50) g.push(`M0 ${y}H${D}`);
   const fs=hs*1.6, seg=(a,b,cls)=>{ const len=Math.round(Math.hypot(b[0]-a[0],b[1]-a[1])); return `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="var(--wall)" stroke-width="${cls?6:14}"${cls?' stroke-dasharray="10 8"':""} stroke-linecap="round"/>${len>=20?`<text x="${(a[0]+b[0])/2}" y="${(a[1]+b[1])/2-hs*1.4}" font-size="${fs}" text-anchor="middle" style="fill:var(--blue-ink);font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:${fs*.3}px">${cm(len)}</text>`:""}`; };
   let out="";
+  if(S.drawRef){ const R=S.drawRef; out+=`<path d="M${R.map(p=>p.join(" ")).join("L")}Z" fill="var(--wall)" fill-opacity=".08" stroke="var(--wall)" stroke-opacity=".45" stroke-width="10" stroke-linejoin="round"/>`; }
   for(let i=1;i<pts0.length;i++) out+=seg(pts0[i-1],pts0[i]);
+  if(pts0.length>=3&&!prev) out+=`<line x1="${pts0[pts0.length-1][0]}" y1="${pts0[pts0.length-1][1]}" x2="${pts0[0][0]}" y2="${pts0[0][1]}" stroke="var(--wall)" stroke-opacity=".35" stroke-width="5" stroke-dasharray="8 8"/>`;
   if(prev&&pts0.length) out+=seg(pts0[pts0.length-1],prev,1);
-  out+=pts0.map((p,i)=>`<circle cx="${p[0]}" cy="${p[1]}" r="${i===0?hs*1.5:hs*.8}" fill="${i===0?"var(--ok)":"var(--wall)"}" stroke="#fff" stroke-width="${hs*.3}"/>`).join("");
-  if(prev) out+=`<circle cx="${prev[0]}" cy="${prev[1]}" r="${hs*.7}" fill="var(--red)"/>`;
+  const last=pts0.length-1;
+  out+=pts0.map((p,i)=>`<g data-dpt="${i}" style="cursor:pointer"><circle cx="${p[0]}" cy="${p[1]}" r="${hs*2.2}" fill="transparent"/><circle cx="${p[0]}" cy="${p[1]}" r="${i===0?hs*1.5:i===last?hs*1.2:hs*.9}" fill="${i===0?"var(--ok)":i===last?"var(--red)":"var(--wall)"}" stroke="${S.drawSel===i?"var(--blue-ink)":"#fff"}" stroke-width="${S.drawSel===i?hs*.6:hs*.3}"/></g>`).join("");
+  if(prev) out+=`<circle cx="${prev[0]}" cy="${prev[1]}" r="${hs*.7}" fill="var(--red)" pointer-events="none"/>`;
   return out;
 }
 function bindDraw(r){
@@ -1591,17 +1598,29 @@ function bindDraw(r){
     if(P.length){ const l=P[P.length-1], dx=Math.abs(x-l[0]), dy=Math.abs(y-l[1]); if(dx<dy*.35) x=l[0]; else if(dy<dx*.35) y=l[1];
       const f=P[0]; if(P.length>=3&&Math.hypot(x-f[0],y-f[1])<hs*3) return [...f];
       if(Math.abs(x-f[0])<hs*1.2) x=f[0]; if(Math.abs(y-f[1])<hs*1.2) y=f[1]; }
+    for(const q of S.drawRef||[]){ if(Math.hypot(x-q[0],y-q[1])<hs*2.2) return [...q]; }
+    for(const q of S.drawRef||[]){ if(Math.abs(x-q[0])<hs) x=q[0]; if(Math.abs(y-q[1])<hs) y=q[1]; }
     return [x,y]; };
   const paint=prev=>{ $("drawLayer").innerHTML=drawLayerSVG(D,hs,prev); };
   svg.addEventListener("pointermove",e=>paint(snap(e)));
-  svg.addEventListener("pointerdown",e=>{ e.preventDefault(); const p=snap(e), P=S.drawPts||(S.drawPts=[]);
+  svg.addEventListener("pointerdown",e=>{ e.preventDefault(); const P=S.drawPts||(S.drawPts=[]), dp=e.target.closest("[data-dpt]");
+    if(dp){ const i=+dp.dataset.dpt;
+      if(i===0&&P.length>=3&&S.drawSel==null){ drawFinish(r); return; }
+      S.drawSel=S.drawSel===i?null:i; render(); return; }
+    if(S.drawSel!=null){ S.drawSel=null; render(); return; }
+    const p=snap(e);
     if(P.length>=3&&p[0]===P[0][0]&&p[1]===P[0][1]){ drawFinish(r); return; }
     const l=P[P.length-1]; if(l&&l[0]===p[0]&&l[1]===p[1]) return;
-    P.push(p); paint(p); const b=$("drawClose"); if(b) b.disabled=P.length<3; const u=$("drawUndo"); if(u) u.disabled=!P.length; });
+    P.push(p); paint(p); const b=$("drawClose"); if(b) b.disabled=P.length<3; const u=$("drawUndo"); if(u) u.disabled=!P.length; const c=$("drawClear"); if(c) c.disabled=!P.length; });
 }
 function drawFinish(r){
   const P=S.drawPts||[]; if(P.length<3){ toast("Pon al menos tres esquinas."); return; }
-  const o=S.drawOff||{x:0,y:0}; S.drawMode=false; S.drawPts=null; S.drawOff=null; saveShape(r,P.map(p=>[p[0]-o.x,p[1]-o.y])); toast("Forma guardada. Pulsa una medida del plano para ajustarla.");
+  if(S.drawNew){ // otra habitación al lado: estancia nueva con su propia forma
+    const mx=Math.min(...P.map(p=>p[0])), my=Math.min(...P.map(p=>p[1])), Q=P.map(([x,y])=>[x-mx,y-my]), {W,L}=bbox(Q), id=uid(), n=roomsOf(r.proyectoId).length+1;
+    S.drawMode=false; S.drawPts=null; S.drawOff=null; S.drawRef=null; S.drawNew=false; S.drawSel=null;
+    save("estancias",id,{proyectoId:r.proyectoId,nombre:`Estancia ${n}`,ancho:W,largo:L,alto:techoR(r),puntos:Q.map(([x,y])=>({x,y})),creado:Date.now()}).then(()=>{ S.roomId=id; S.editShape=true; render(); setTimeout(()=>{ $("rp_nombre")?.focus(); $("rp_nombre")?.select(); },80); }).catch(()=>{});
+    toast("Estancia nueva creada. Ponle nombre en el panel."); return; }
+  const o=S.drawOff||{x:0,y:0}; S.drawMode=false; S.drawPts=null; S.drawOff=null; S.drawSel=null; S.drawRef=null; saveShape(r,P.map(p=>[p[0]-o.x,p[1]-o.y])); toast("Forma guardada. Pulsa una medida del plano para ajustarla.");
 }
 // Pulsar una medida del plano: aparece un recuadro para escribir la nueva
 function wallEdit(r,i,e){
@@ -1624,9 +1643,12 @@ function shapePanel(r,P){
   const num=(id,label,v,extra="")=>`<div><label for="${id}">${label}</label><input id="${id}" type="number" min="1" step="1" inputmode="numeric" value="${v??""}"${extra}></div>`;
   const holes=S.items.filter(i=>i.estanciaId===r.id&&isHueco(i)), est=r.estructura||[];
   const estName=e=>({viga:"Viga",pilar:"Columna",tabique:"Tabique"})[e.tipo]||"Elemento";
-  if(S.drawMode) return `<div class="panel room-ed"><div class="ph"><h3>Dibujar la forma</h3></div>
-    <ol class="sh-steps"><li>Sigues desde la forma que ya tenías: pincha en el plano para <b>añadir esquinas</b> a continuación del último punto. Las paredes salen rectas solas.</li><li>Para terminar, pincha en el <b style="color:var(--ok)">primer punto verde</b> o pulsa «Cerrar la forma». Si prefieres empezar de nuevo, «Borrar y empezar de cero».</li><li>Después, pulsa cualquier medida azul para escribir lo que mide de verdad.</li></ol>
-    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary sm" type="button" id="drawClose" data-act="drawClose"${(S.drawPts||[]).length<3?" disabled":""}>Cerrar la forma</button><button class="btn sm" type="button" id="drawUndo" data-act="drawUndo"${(S.drawPts||[]).length?"":" disabled"}>↶ Quitar el último punto</button><button class="btn sm danger" type="button" data-act="drawClear"${(S.drawPts||[]).length?"":" disabled"}>🗑 Borrar y empezar de cero</button><button class="btn ghost sm" type="button" data-act="drawCancel">Cancelar</button></div></div>`;
+  if(S.drawMode){ const n=(S.drawPts||[]).length, sel=S.drawSel!=null;
+    return `<div class="panel room-ed"><div class="ph"><h3>${S.drawNew?"Otra habitación al lado":"Dibujar la forma"}</h3></div>
+    <ol class="sh-steps">${S.drawNew?`<li>La habitación actual sale en gris. Pincha donde va <b>cada esquina</b> de la nueva: se pegan solas a las esquinas de la otra.</li>`:`<li>Sigues desde tu forma: pincha en el plano para <b>añadir esquinas</b> después del punto <b style="color:var(--red)">rojo</b> (el último).</li>`}
+      <li><b>Pincha cualquier punto</b> para borrarlo o para seguir dibujando desde él.</li><li>Para terminar, pincha el <b style="color:var(--ok)">punto verde</b> o pulsa «Cerrar la forma».</li></ol>
+    ${sel?`<div class="fx-form"><h4>Punto seleccionado</h4><div class="full" style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm danger" type="button" data-act="drawDelPt">🗑 Borrar este punto</button><button class="btn sm primary" type="button" data-act="drawFrom">➜ Seguir desde aquí</button><button class="btn ghost sm" type="button" data-act="drawSelNone">Cancelar</button></div></div>`:""}
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary sm" type="button" id="drawClose" data-act="drawClose"${n<3?" disabled":""}>Cerrar la forma</button><button class="btn sm" type="button" id="drawUndo" data-act="drawUndo"${n?"":" disabled"}>↶ Quitar el último punto</button><button class="btn sm danger" type="button" id="drawClear" data-act="drawClear"${n?"":" disabled"}>🗑 Borrar y empezar de cero</button><button class="btn ghost sm" type="button" data-act="drawCancel">Cancelar</button></div></div>`; }
   let form="";
   if(f){
     const el=f.eid!=null&&est.find(x=>String(x.id)===String(f.eid)), t=f.tipo, horiz=f.dir?f.dir==="h":true, v=k=>f[k]??"";
@@ -1646,7 +1668,7 @@ function shapePanel(r,P){
       <div><label>Superficie</label><p class="num" style="margin:8px 0 0;font-weight:700">${(polyArea(P)/10000).toLocaleString("es-ES",{maximumFractionDigits:1})} m²</p></div>
     </div><p class="re-tip">📏 Para cambiar lo que mide una pared, <b>pulsa su número azul</b> en el plano y escribe la medida.</p></section>
     <section class="re-s"><h4>2 · Forma</h4>
-      <button class="btn primary" type="button" data-act="drawStart" style="align-self:flex-start">✏️ Dibujar la forma</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary" type="button" data-act="drawStart">✏️ Dibujar la forma</button><button class="btn" type="button" data-act="drawNewRoom">＋ Otra habitación al lado</button></div>
       <p class="muted" style="margin:0;font-size:13px">O empieza desde una forma típica:</p>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${[["rect","▭ Rectangular"],["L","⌐ En L"],["U","⊔ En U"],["chaflan","⬠ Con chaflán"]].map(([k,n])=>`<button class="btn sm" type="button" data-tpl="${k}"${k==="rect"&&rect?' aria-pressed="true"':""}>${n}</button>`).join("")}</div>
       ${S.shapeSel?.t==="v"&&P[S.shapeSel.i]?`<button class="btn sm danger" type="button" data-act="delVtx"${P.length<=3?" disabled":""}>Quitar la esquina seleccionada</button>`:`<p class="muted" style="margin:0;font-size:12px">Arrastra las esquinas naranjas. Para <b>añadir una esquina</b>, pincha en la pared justo donde la quieres y arrastra.</p>`}
@@ -1817,7 +1839,7 @@ function planHTML(p,r){
   if(!r) return `<div class="toolbar">${chips}</div><div class="blank"><h2>Dibuja tu primera estancia</h2><p>Solo necesitas el ancho y el largo en centímetros. Después arrastras muebles encima y ves si caben.</p><button class="btn primary" type="button" data-act="newRoom">Crear estancia</button></div>`;
   const items=S.items.filter(i=>i.estanciaId===r.id);
   const bad=problems(items,r);
-  const es=!!S.editShape&&S.vista!=="3d", P=pts(r), BB=bbox(P), DR=es&&S.drawMode?Math.max(600,Math.round(Math.max(BB.W,BB.L)*1.5/50)*50,...(S.drawPts||[]).flat().map(v=>Math.ceil((v+50)/50)*50)):0;
+  const es=!!S.editShape&&S.vista!=="3d", P=pts(r), BB=bbox(P), DR=es&&S.drawMode?Math.max(S.drawNew?800:600,Math.round(Math.max(BB.W,BB.L)*(S.drawNew?2.6:1.5)/50)*50,...(S.drawPts||[]).concat(S.drawRef||[]).flat().map(v=>Math.ceil((v+50)/50)*50)):0;
   const W=DR||Math.max(BB.W,r.calco?.w||0), L=DR||Math.max(BB.L,r.calco?.l||0), pad=Math.max(40,Math.max(W,L)*.07), hs=Math.max(7,Math.max(W,L)/50);
   if(!S.migrating&&S.items.some(i=>i.estanciaId===r.id&&isFixedItem(i))) setTimeout(()=>migrateFixed(r.id),0);
   const sel=items.find(i=>i.id===S.sel);
@@ -1827,15 +1849,15 @@ function planHTML(p,r){
   return `<div class="toolbar">${chips}<div class="tb-right">${es?"":`<button class="btn primary sm" type="button" data-act="newProdHere">＋ Crear producto</button>`}<div class="seg" role="group" aria-label="Vista"><button type="button" data-vista="2d" aria-pressed="${!v3}">2D</button><button type="button" data-vista="3d" aria-pressed="${v3}">3D</button></div>${es?"":`<button class="btn sm pal${S.paint?" on":""}" type="button" data-act="finishes" title="Color y material de paredes y suelo"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.9 1.8-1.9 0-.5-.2-.9-.5-1.3-.3-.3-.5-.8-.5-1.3 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.3" fill="#F86C2F" stroke="none"/><circle cx="10" cy="7" r="1.3" fill="#8DB6C7" stroke="none"/><circle cx="14.5" cy="7" r="1.3" fill="#6D0101" stroke="none"/><circle cx="17.5" cy="10.5" r="1.3" fill="#9DAF8A" stroke="none"/></svg><span>Paredes y suelo</span></button><button class="btn sm room-btn" type="button" data-act="editShape" title="Medidas, paredes, vigas y columnas de la estancia"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V3h18v18z"/><path d="M3 9h6V3M15 21v-6h6"/></svg><span>Editar estancia</span></button>`}</div></div>
   <div class="planner">
     <div class="plan-main"><div class="canvas">
-      ${es?"":`<div class="plan-tools"><button class="pt-btn" type="button" data-act="undo"${S.hist.length?"":" disabled"} title="Deshacer el último cambio (Ctrl+Z)"><span aria-hidden="true">↶</span> Deshacer</button><button class="pt-btn${S.human?" on":""}" type="button" data-act="human" title="Ver si cabes: distancias para pasar y vista a la altura de los ojos"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2.5"/><path d="M12 8v7M8 10.5l4-1.5 4 1.5M9.5 22l2.5-7 2.5 7"/></svg><span>Persona</span></button>${(()=>{ const n=items.filter(i=>i.bloq).length; return n>1?`<button class="pt-btn" type="button" data-act="unlockAll" title="Desbloquear todos los muebles bloqueados de esta estancia">${UNLOCK_SVG}<span>Desbloquear (${n})</span></button>`:""; })()}</div>`}
+      ${es?"":`<div class="plan-tools"><button class="pt-btn" type="button" data-act="undo"${S.hist.length?"":" disabled"} title="Deshacer el último cambio (Ctrl+Z)"><span aria-hidden="true">↶</span> Deshacer</button><button class="pt-btn${S.human?" on":""}" type="button" data-act="human" title="Ver si cabes: distancias para pasar y vista a la altura de los ojos"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2.5"/><path d="M12 8v7M8 10.5l4-1.5 4 1.5M9.5 22l2.5-7 2.5 7"/></svg><span>Persona</span></button><button class="pt-btn${S.dims?" on":""}" type="button" data-act="dims" title="Mostrar las medidas: espacio libre entre muebles y paredes"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17 17 3l4 4L7 21z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/></svg><span>Medidas</span></button>${S.human&&v3?`<div class="seg pt-seg" role="group" aria-label="Cómo te ves"><button type="button" data-hview="1" aria-pressed="${S.hview==="1"}">👁 1ª persona</button><button type="button" data-hview="3" aria-pressed="${S.hview!=="1"}">🧍‍♀️ 3ª persona</button></div>`:""}${(()=>{ const n=items.filter(i=>i.bloq).length; return n>1?`<button class="pt-btn" type="button" data-act="unlockAll" title="Desbloquear todos los muebles bloqueados de esta estancia">${UNLOCK_SVG}<span>Desbloquear (${n})</span></button>`:""; })()}</div>`}
       ${v3?`<div id="view3d"></div><span class="hint">Arrastra el fondo para girar la vista · pellizca o usa la rueda para acercar · arrastra un mueble para moverlo</span>`:`<svg id="plan" data-pad="${pad}" data-hs="${hs}" data-d="${DR}" viewBox="${-pad} ${-pad} ${W+pad*2} ${L+pad*2}" role="img" aria-label="Plano de ${esc(r.nombre)}">
         <g id="roomGeom">${S.drawMode&&es?drawBgSVG(DR):roomGeomSVG(P,pad,r.sueloColor||DEF_FIN.sueloColor,{r,edit:es,paint:S.paint&&!es})}</g>${r.calco?`<g id="calco" opacity=".55" pointer-events="none">${calcoSVG(r.calco)}</g>`:""}
         <g id="itemsLayer"${es?' class="es-dim" style="pointer-events:none"':""}${es&&S.drawMode&&S.drawOff?` transform="translate(${S.drawOff.x} ${S.drawOff.y})"`:""}>${[...items].sort((a,b)=>(a.tipo==="alfombra"||/alfombra/i.test(a.nombre)?-1:0)-(b.tipo==="alfombra"||/alfombra/i.test(b.nombre)?-1:0)).map(i=>itemSVG(i,bad.has(i.id))).join("")}</g>
-        ${S.human&&!es?`<g id="humanLayer">${humanSVG(r,items)}</g>`:""}
+        ${(S.human||S.dims)&&!es?`<g id="humanLayer">${humanSVG(r,items)}</g>`:""}
         ${es&&S.drawMode?`<g id="drawLayer">${drawLayerSVG(DR,hs)}</g>`:es?`<g id="shapeLayer">${shapeHandlesSVG(P,hs)}</g>`:""}
       </svg>
       <span class="hint">${es&&S.drawMode?"Pincha para poner cada esquina · cuadrícula de 50 cm":`${area} m² · cuadrícula de 50 cm · ${es?"pulsa una medida para cambiarla":S.paint?"pulsa una pared para pintar solo esa":"arrastra para mover · pulsa otra vez para girar"}`}</span>`}
-      ${S.human&&!es?`<div class="hu-leg"><span><i class="ok"></i>≥ 90 cm, se pasa bien</span><span><i class="mid"></i>70–90 cm, justo</span><span><i class="bad"></i>&lt; 70 cm, estrecho</span>${v3?"":"<span>Arrastra a la persona 👤 para probar un paso</span>"}</div>`:""}
+      ${(S.human||S.dims)&&!es?`<div class="hu-leg"><span><i class="ok"></i>≥ 90 cm, se pasa bien</span><span><i class="mid"></i>70–90 cm, justo</span><span><i class="bad"></i>&lt; 70 cm, estrecho</span>${!v3&&S.human?"<span>Arrastra a la persona 👤 para probar un paso</span>":""}</div>`:""}
       ${bad.size&&!es?`<span class="warn">${bad.size} ${bad.size>1?"muebles no caben o se solapan":"mueble no cabe o se solapa"}</span>`:""}
     </div>${es?"":roomListsHTML(p,r)}</div>
     <div class="side">
@@ -2046,11 +2068,43 @@ function humanPos(r){ if(!S.humanPos||S.humanPos.r!==r.id){ const {W,L}=bbox(pts
 function humanSVG(r,items){
   const P=pts(r), obs=hObstacles(r), {W,L}=bbox(P), fs=Math.max(11,Math.max(W,L)/38), seen=new Set(); let out="";
   obs.forEach(o=>hGaps(o,obs,P,o.id).forEach(g=>{ const k=g.hit==="pared"?null:[o.id,g.hit].sort().join("|")+g.ax; if(k&&seen.has(k)) return; if(k) seen.add(k); out+=gapSVG(g,fs); }));
+  if(!S.human) return out;
   const h=humanPos(r), b={x1:h.x-HUMAN.w/2,y1:h.y-HUMAN.d/2,x2:h.x+HUMAN.w/2,y2:h.y+HUMAN.d/2};
   const fits=[[b.x1,b.y1],[b.x2,b.y1],[b.x2,b.y2],[b.x1,b.y2]].every(([a,c])=>inPoly(a,c,P))&&!obs.some(o=>!(o.x2<=b.x1||o.x1>=b.x2||o.y2<=b.y1||o.y1>=b.y2));
   hGaps(b,obs,P,null).forEach(g=>{ out+=gapSVG(g,fs*1.1,true); });
   out+=`<g class="human${fits?"":" no"}" data-human="1" transform="translate(${h.x} ${h.y})" style="cursor:grab"><ellipse rx="${HUMAN.w/2}" ry="${HUMAN.d/2}"/><circle r="11"/><path d="M0 ${-HUMAN.d/2-2}l-6 -7h12z"/><title>${fits?"Cabes aquí":"Aquí no cabes"}</title></g>`;
   return out;
+}
+// Figura de mujer (1,65 m) donde está la persona, y las cotas de paso dibujadas en el suelo
+function human3d(T,G,r,mat){
+  const h=S.human?humanPos(r):null, P=pts(r), obs=hObstacles(r), {W,L}=bbox(P);
+  const col={ok:0x2E7A4E,mid:0xD98A00,bad:0xB0201A};
+  const label=(txt,c)=>{ const cv=document.createElement("canvas"); cv.width=128; cv.height=64; const x=cv.getContext("2d");
+    x.fillStyle="#"+c.toString(16).padStart(6,"0"); x.beginPath(); x.roundRect(4,8,120,48,24); x.fill(); x.fillStyle="#fff"; x.font="bold 34px sans-serif"; x.textAlign="center"; x.textBaseline="middle"; x.fillText(txt,64,33);
+    const sp=new T.Sprite(new T.SpriteMaterial({map:new T.CanvasTexture(cv),depthTest:false})); sp.scale.set(36,18,1); sp.renderOrder=10; return sp; };
+  const gap=g=>{ const c=col[gapCls(g.d)], len=Math.hypot(g.x2-g.x1,g.y2-g.y1); if(len<2) return;
+    const m=new T.Mesh(new T.BoxGeometry(g.ax==="x"?len:3,1.2,g.ax==="x"?3:len),new T.MeshBasicMaterial({color:c})); m.position.set((g.x1+g.x2)/2,1,(g.y1+g.y2)/2); G.add(m);
+    const lb=label(String(g.d),c); lb.scale.set(String(g.d).length>2?44:36,18,1); lb.position.set((g.x1+g.x2)/2,14,(g.y1+g.y2)/2); G.add(lb); };
+  const seen=new Set();
+  obs.forEach(o=>hGaps(o,obs,P,o.id).forEach(g=>{ const k=g.hit==="pared"?null:[o.id,g.hit].sort().join("|")+g.ax; if(k&&seen.has(k)) return; if(k) seen.add(k); gap(g); }));
+  // tamaño de cada mueble encima de él
+  if(S.dims) S.items.filter(i=>i.estanciaId===r.id&&!isHueco(i)).forEach(i=>{ const f=footprint(i), lb=label(`${cm(i.w)}×${cm(i.d)}`,0x23407E); lb.scale.set(54,18,1); lb.position.set(i.x+f.fw/2,(+i.z||0)+shape3d(i).h+18,i.y+f.fd/2); G.add(lb); });
+  if(!S.human) return;
+  hGaps({x1:h.x-HUMAN.w/2,y1:h.y-HUMAN.d/2,x2:h.x+HUMAN.w/2,y2:h.y+HUMAN.d/2},obs,P,null).forEach(gap);
+  if(S.hview==="1") return;
+  // la figura
+  const g=new T.Group(), skin=mat(0xEFC3A2), dress=mat(0x4C72C9), hair=mat(0x4A2C1E), shoe=mat(0x2B2B2B);
+  const add=(geo,m,x,y,z)=>{ const me=new T.Mesh(geo,m); me.position.set(x,y,z); me.castShadow=true; g.add(me); return me; };
+  [-5,5].forEach(x=>{ add(new T.CylinderGeometry(3.6,3,72,12),skin,x,40,0); add(new T.BoxGeometry(7,4,13),shoe,x,2,2.5); });
+  add(new T.CylinderGeometry(11,21,50,20),dress,0,82,0);              // falda
+  add(new T.CylinderGeometry(12,11,36,20),dress,0,122,0);             // cuerpo
+  add(new T.SphereGeometry(12.5,20,12),dress,0,138,0).scale.set(1,.45,.75);
+  [-1,1].forEach(k=>{ const a=add(new T.CylinderGeometry(2.8,2.4,56,10),skin,k*15,112,0); a.rotation.z=k*.12; });
+  add(new T.CylinderGeometry(4,4.4,8,12),skin,0,146,0);               // cuello
+  add(new T.SphereGeometry(10,20,16),skin,0,157,0);                   // cabeza
+  const hd=add(new T.SphereGeometry(10.8,20,16,0,Math.PI*2,0,Math.PI*.6),hair,0,158.5,-1); hd.rotation.x=-.25;
+  add(new T.CylinderGeometry(6,3,26,12),hair,0,146,-9);               // melena
+  g.position.set(h.x,0,h.y); g.rotation.y=h.a; G.add(g);
 }
 function addItem(r,base){
   const {fw,fd}=footprint({...base,rot:0});
@@ -2619,6 +2673,7 @@ function build3dRoom(r){
   (r.estructura||[]).forEach(e=>{ const hh=e.tipo==="viga"?(+e.h||30):e.tipo==="pilar"?H:Math.min(H,+e.h||H), y0=e.tipo==="viga"?H-hh:0;
     const m=new T.Mesh(new T.BoxGeometry(Math.max(1,e.w),hh,Math.max(1,e.d)),mat(new T.Color(F.paredColor).multiplyScalar(e.tipo==="viga"?.94:1),{emissive:new T.Color(F.paredColor),emissiveIntensity:.25}));
     m.position.set(e.x+e.w/2,y0+hh/2,e.y+e.d/2); m.castShadow=true; m.receiveShadow=true; G.add(m); });
+  if(S.human||S.dims) human3d(T,G,r,mat);
   const items=S.items.filter(i=>i.estanciaId===r.id);
   items.forEach(it=>{
     const sel=it.id===S.sel, glow=sel?{emissive:0xF86C2F,emissiveIntensity:.3}:{};
@@ -2651,9 +2706,14 @@ function mount3d(r){
   if(!ensure3d()){ box.insertAdjacentHTML("afterbegin",`<p class="muted" style="padding:24px;margin:0">No se ha podido cargar el visor 3D. Comprueba tu conexión y recarga la página.</p>`); return; }
   box.prepend(V.renderer.domElement); size3d();
   V.room=r; build3dRoom(r);
-  if(S.human){ const h=humanPos(r), key=`${r.id}|${h.x}|${h.y}|${h.a}`; if(V.fp!==key){ V.fp=key; V.controls.minDistance=1; V.controls.enableZoom=false; V.controls.enablePan=false; V.controls.maxPolarAngle=Math.PI*.62; V.controls.minPolarAngle=Math.PI*.3;
-      V.controls.target.set(h.x+Math.sin(h.a)*30,155,h.y+Math.cos(h.a)*30); V.camera.position.set(h.x,160,h.y); V.controls.update(); } draw3d(); return; }
-  if(V.fp){ V.fp=false; V.controls.minDistance=80; V.controls.enableZoom=true; V.controls.enablePan=true; V.controls.maxPolarAngle=Math.PI/2-0.04; V.controls.minPolarAngle=0; V.roomId=null; }
+  if(S.human){ const h=humanPos(r), third=S.hview!=="1", key=`${r.id}|${h.x}|${h.y}|${h.a}|${third}`;
+    if(V.fp!==key){ V.fp=key; const c=V.controls;
+      if(third){ c.minDistance=60; c.maxDistance=900; c.enableZoom=true; c.enablePan=false; c.maxPolarAngle=Math.PI/2-0.04; c.minPolarAngle=0;
+        c.target.set(h.x,100,h.y); V.camera.position.set(h.x-Math.sin(h.a)*260,240,h.y-Math.cos(h.a)*260); }
+      else { c.minDistance=1; c.enableZoom=false; c.enablePan=false; c.maxPolarAngle=Math.PI*.62; c.minPolarAngle=Math.PI*.3;
+        c.target.set(h.x+Math.sin(h.a)*30,155,h.y+Math.cos(h.a)*30); V.camera.position.set(h.x,160,h.y); }
+      c.update(); } draw3d(); return; }
+  if(V.fp){ V.fp=null; V.controls.maxDistance=3000; V.controls.minDistance=80; V.controls.enableZoom=true; V.controls.enablePan=true; V.controls.maxPolarAngle=Math.PI/2-0.04; V.controls.minPolarAngle=0; V.roomId=null; }
   if(V.roomId!==r.id){ const W=+r.ancho, L=+r.largo, m=Math.max(W,L);
     V.controls.target.set(W/2,50,L/2); V.camera.position.set(W/2+m*.55,m*.95,L/2+m*1.15); V.controls.update(); V.roomId=r.id; }
   draw3d();
@@ -3946,7 +4006,7 @@ $("d_url").addEventListener("input",()=>{ clearTimeout(onProdUrl.t); onProdUrl.t
 document.addEventListener("click",e=>{
   if(e.target.closest("summary button")) e.preventDefault();
   document.querySelectorAll("details.menu[open]").forEach(m=>{ if(!m.contains(e.target)||e.target.closest(".menu-p button")) m.open=false; });
-  const t=e.target.closest("[data-act],[data-tab],[data-room],[data-addgen],[data-addprod],[data-editprod],[data-place],[data-choose],[data-edittask],[data-cycle],[data-editcont],[data-color],[data-vista],[data-addopt],[data-tpl],[data-editgasto],[data-dellist],[data-editlist],[data-wall],[data-wallreset],[data-cj2list],[data-gocj],[data-goprod],[data-photo],[data-rmfoto],[data-editmed],[data-copymed],[data-rotby],[data-zby],[data-zto],[data-hex2],[data-cam],[data-addcat],[data-fxnew],[data-fxedit],[data-fxdel],[data-addn],[data-qty],[data-cmppick],[data-cmpclear],[data-budget],[data-shcopy],[data-shsend],[data-shimport],[data-shstop],[data-shleave],[data-shopen],[data-hlnew],[data-hledit],[data-pc],[data-pt],[data-st],[data-sc],[data-view],[data-rotto],[data-proj],[data-openbud],[data-editcj],[data-qadd],[data-elchk],[data-eledit],[data-placecj],[data-addcj],[data-dupcj]");
+  const t=e.target.closest("[data-act],[data-tab],[data-room],[data-addgen],[data-addprod],[data-editprod],[data-place],[data-choose],[data-edittask],[data-cycle],[data-editcont],[data-color],[data-vista],[data-addopt],[data-tpl],[data-editgasto],[data-dellist],[data-editlist],[data-wall],[data-wallreset],[data-cj2list],[data-gocj],[data-goprod],[data-photo],[data-rmfoto],[data-editmed],[data-copymed],[data-rotby],[data-zby],[data-zto],[data-hex2],[data-cam],[data-addcat],[data-fxnew],[data-fxedit],[data-fxdel],[data-hview],[data-addn],[data-qty],[data-cmppick],[data-cmpclear],[data-budget],[data-shcopy],[data-shsend],[data-shimport],[data-shstop],[data-shleave],[data-shopen],[data-hlnew],[data-hledit],[data-pc],[data-pt],[data-st],[data-sc],[data-view],[data-rotto],[data-proj],[data-openbud],[data-editcj],[data-qadd],[data-elchk],[data-eledit],[data-placecj],[data-addcj],[data-dupcj]");
   if(!t) return;
   const p=proyecto(), r=p&&room(p), d=t.dataset;
   if(d.tpl){ const P0=pts(r), {W,L}=bbox(P0); S.shapeSel=null; saveShape(r,template(d.tpl,W,L)); return; }
@@ -3954,6 +4014,7 @@ document.addEventListener("click",e=>{
   if(d.tab){ S.editShape=false; S.view="proyecto"; S.tab=d.tab; window.scrollTo(0,0); lsSet("proletix:tab",S.tab); render(); return; }
   if(d.room){ S.roomId=d.room; S.sel=null; S.editShape=false; S.shapeSel=null; render(); return; }
   if(d.cam){ moveCam(d.cam); return; }
+  if(d.hview){ S.hview=d.hview; V.fp=null; render(); return; }
   if(d.budget){ budToggle(d.budget); return; }
   if(d.qty){ const [id,dl]=d.qty.split("|"); qtyChange(id,+dl); return; }
   if(d.cmppick){ const x=S.productos.find(y=>y.id===d.cmppick); if(x){ const {id,...b}=x; saveQuiet("productos",id,{...b,cmp:!x.cmp}).catch(()=>{}); } return; }
@@ -4027,12 +4088,17 @@ document.addEventListener("click",e=>{
     case "editShape": S.editShape=true; S.paint=false; S.vista="2d"; S.sel=null; S.shapeSel=null; S.fixForm=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
     case "shapeDone": S.editShape=false; S.drawMode=false; S.drawPts=null; S.shapeSel=null; S.fixForm=null; S.holeForm=null; if(d.then==="doors") S.openCats.add("Puertas, ventanas y escaleras"); render(); if(d.then==="doors") setTimeout(()=>document.querySelector('.cat-d[data-cat="Puertas, ventanas y escaleras"]')?.scrollIntoView({behavior:"smooth",block:"center"}),60); break;
     case "fxSave": fxSave(r); break;
-    case "drawStart": { S.drawMode=true; const P0=pts(r), B0=bbox(P0), D=Math.max(600,Math.round(Math.max(B0.W,B0.L)*1.5/50)*50), ox=Math.round((D-B0.W)/2/50)*50, oy=Math.round((D-B0.L)/2/50)*50;
+    case "drawStart": { S.drawMode=true; S.drawNew=false; S.drawRef=null; S.drawSel=null; const P0=pts(r), B0=bbox(P0), D=Math.max(600,Math.round(Math.max(B0.W,B0.L)*1.5/50)*50), ox=Math.round((D-B0.W)/2/50)*50, oy=Math.round((D-B0.L)/2/50)*50;
       S.drawPts=P0.map(([x,y])=>[x+ox,y+oy]); S.drawOff={x:ox,y:oy}; } S.fixForm=null; S.holeForm=null; S.shapeSel=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
     case "drawUndo": (S.drawPts||[]).pop(); render(); break;
-    case "drawClear": S.drawPts=[]; render(); break;
+    case "drawClear": S.drawPts=[]; S.drawSel=null; render(); break;
+    case "drawSelNone": S.drawSel=null; render(); break;
+    case "drawDelPt": if(S.drawSel!=null){ S.drawPts.splice(S.drawSel,1); S.drawSel=null; render(); } break;
+    case "drawFrom": if(S.drawSel!=null){ const P=S.drawPts, k=S.drawSel; S.drawPts=[...P.slice(k+1),...P.slice(0,k+1)]; S.drawSel=null; render(); toast("Ahora sigues desde ese punto: pincha para añadir esquinas."); } break;
+    case "drawNewRoom": { const P0=pts(r), B0=bbox(P0), D=Math.max(800,Math.round(Math.max(B0.W,B0.L)*2.6/50)*50), ox=Math.round((D-B0.W)/2/50)*50, oy=Math.round((D-B0.L)/2/50)*50;
+      S.editShape=true; S.drawMode=true; S.drawNew=true; S.drawPts=[]; S.drawSel=null; S.drawOff={x:ox,y:oy}; S.drawRef=P0.map(([x,y])=>[x+ox,y+oy]); S.fixForm=null; S.holeForm=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break; }
     case "drawClose": drawFinish(r); break;
-    case "drawCancel": S.drawMode=false; S.drawPts=null; S.drawOff=null; render(); break;
+    case "drawCancel": S.drawMode=false; S.drawPts=null; S.drawOff=null; S.drawSel=null; S.drawRef=null; S.drawNew=false; render(); break;
     case "hlSave": hlSave(r); break;
     case "hlCancel": S.holeForm=null; render(); break;
     case "fxCancel": S.fixForm=null; render(); break;
@@ -4061,6 +4127,7 @@ document.addEventListener("click",e=>{
     case "allBudgets": S.view="presupuestos"; render(); window.scrollTo(0,0); break;
     case "myProjects": S.view="proyectos"; render(); window.scrollTo(0,0); break;
     case "account": openAccount(); break;
+    case "dims": S.dims=!S.dims; render(); break;
     case "human": S.human=!S.human; S.sel=null; S.paint=false; if(S.human) toast(S.vista==="3d"?"Vista a la altura de los ojos: arrastra para mirar alrededor. En 2D puedes mover a la persona.":"Arrastra a la persona por el plano. Púlsala para girarla."); render(); break;
     case "budAdd": openBudAdd(); break;
     case "budNewProd": $("dlgBudAdd").close(); openProd(null,{}); setTimeout(()=>{ $("d_estado").value="elegido"; },0); break;
