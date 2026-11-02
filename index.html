@@ -611,6 +611,7 @@ s.old{color:var(--muted);font-size:.6em;font-weight:500;margin-left:4px}
 .pl-list input[type=text]{flex:1;min-width:0}
 .pl-list small{color:var(--muted);white-space:nowrap}
 .pl-sw{width:14px;height:14px;border-radius:4px;flex:none}
+.pl-num{width:22px;height:22px;border-radius:50%;color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center}
 .dxf-btn{background:var(--blue-soft);border-color:var(--blue);color:var(--blue-ink);font-weight:600}
 .re-tip{margin:4px 0 0;padding:8px 10px;border-radius:10px;background:var(--blue-soft);color:var(--blue-ink);font-size:13px}
 .fin-who{margin:0;padding:8px 10px;border-radius:10px;background:var(--blue-soft);color:var(--blue-ink);font-size:13px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -3615,7 +3616,7 @@ async function planoRead(){
   }
   const rooms=planoRooms(data);
   if(!rooms.length){ PL.step="img"; PL.err="No he encontrado estancias en la imagen. Prueba con una captura más nítida o cálcalo a mano."; planoRender(); return; }
-  PL.rooms=rooms; PL.step="result"; planoRender();
+  PL.off=new Set(); PL.rooms=rooms; PL.step="result"; planoRender();
 }
 // Endereza las paredes casi rectas para que queden a 90°
 function orthoPoly(P){
@@ -3632,6 +3633,9 @@ function planoRooms(d){
   let k=+d.cm_por_px||0; const f=E.filter(e=>e.m2>0).map(e=>Math.sqrt(e.m2*10000/polyArea(e.P))).sort((a,b)=>a-b);
   if(f.length){ const med=f[f.length>>1]; if(!k||Math.abs(med/k-1)>.06) k=med; }
   PL.noScale=!k; PL.k=k||2;
+  return roomsToCm(E);
+}
+function roomsToCm(E){
   return E.map((e,i)=>{ const Q=e.P.map(([x,y])=>[Math.round(x*PL.k),Math.round(y*PL.k)]), mx=Math.min(...Q.map(p=>p[0])), my=Math.min(...Q.map(p=>p[1]));
     return {...e,i,Q:Q.map(([x,y])=>[x-mx,y-my]),mx,my,area:polyArea(Q)/10000}; });
 }
@@ -3653,11 +3657,114 @@ async function planoCreate(){
     toast(`${sel.length} estancia${sel.length>1?"s creadas":" creada"}. Revisa las medidas en «Editar estancia».`);
   }catch{ toast("No se han podido crear las estancias."); }
 }
+
+/* Detecta las estancias en la imagen sin IA: paredes = trazos oscuros y gruesos; cada hueco cerrado entre paredes es una estancia */
+function morph(M,w,h,r,erode){
+  const t=new Uint8Array(M.length), o=new Uint8Array(M.length);
+  const pass=(src,dst,len,stride,lines,lstride)=>{ const ps=new Int32Array(len+1);
+    for(let l=0;l<lines;l++){ const b=l*lstride; for(let i=0;i<len;i++) ps[i+1]=ps[i]+src[b+i*stride];
+      for(let i=0;i<len;i++){ const a=Math.max(0,i-r), z=Math.min(len,i+r+1), n=ps[z]-ps[a]; dst[b+i*stride]=erode?(n===z-a?1:0):(n>0?1:0); } } };
+  pass(M,t,w,1,h,w); pass(t,o,h,w,w,1); return o;
+}
+function otsu(L){
+  const hist=new Float64Array(256); for(let i=0;i<L.length;i++) hist[L[i]]++;
+  let sum=0; for(let i=0;i<256;i++) sum+=i*hist[i];
+  let wB=0,sB=0,best=0,T=128; for(let t=0;t<256;t++){ wB+=hist[t]; if(!wB) continue; const wF=L.length-wB; if(!wF) break; sB+=t*hist[t];
+    const mB=sB/wB, mF=(sum-sB)/wF, v=wB*wF*(mB-mF)*(mB-mF); if(v>best){ best=v; T=t; } }
+  return T;
+}
+function detectRooms(opt={}){
+  const s=Math.min(1,900/Math.max(PL.w,PL.h)), w=Math.round(PL.w*s), h=Math.round(PL.h*s), N=w*h;
+  const cv=document.createElement("canvas"); cv.width=w; cv.height=h; const cx=cv.getContext("2d"); cx.drawImage(PL.canvas,0,0,w,h);
+  const px=cx.getImageData(0,0,w,h).data, L=new Uint8Array(N);
+  for(let i=0;i<N;i++) L[i]=(px[i*4]*299+px[i*4+1]*587+px[i*4+2]*114)/1000;
+  const T=Math.max(70,Math.min(170,otsu(L)+(opt.dT||0)));
+  let M=new Uint8Array(N); for(let i=0;i<N;i++) M[i]=L[i]<T?1:0;
+  const kw=PL.k/s, ho=Math.max(1,Math.floor((opt.thin||3)/kw));
+  M=morph(morph(M,w,h,ho,true),w,h,ho,false);              // quita textos, muebles y líneas finas
+  const rd=Math.max(2,Math.round((opt.door||45)/kw)), rb=Math.max(rd+2,Math.round(130/kw));
+  // Lo que queda fuera de la casa: se cierra con un radio grande para tapar ventanas
+  const D=morph(M,w,h,rb,false), E=new Uint8Array(N), q=new Int32Array(N); let qh=0,qt=0;
+  const push=i=>{ if(!D[i]&&!E[i]){ E[i]=1; q[qt++]=i; } };
+  for(let x=0;x<w;x++){ push(x); push((h-1)*w+x); } for(let y=0;y<h;y++){ push(y*w); push(y*w+w-1); }
+  while(qh<qt){ const i=q[qh++], x=i%w; if(x>0) push(i-1); if(x<w-1) push(i+1); if(i>=w) push(i-w); if(i<N-w) push(i+w); }
+  const OUT=morph(E,w,h,rb,false), ok=i=>!OUT[i]&&!M[i];
+  // Núcleos de cada estancia: lejos de las paredes, así las puertas no las juntan
+  const W2=morph(M,w,h,rd,false), lab=new Int32Array(N); let n=0;
+  for(let i0=0;i0<N;i0++){ if(lab[i0]||W2[i0]||!ok(i0)) continue; n++; qh=0; qt=0; lab[i0]=n; q[qt++]=i0;
+    while(qh<qt){ const i=q[qh++], x=i%w; for(const j of [x>0?i-1:-1,x<w-1?i+1:-1,i-w,i+w]) if(j>=0&&j<N&&!lab[j]&&!W2[j]&&ok(j)){ lab[j]=n; q[qt++]=j; } } }
+  // Cada núcleo crece hasta las paredes
+  const dist=new Uint16Array(N); qh=0; qt=0; for(let i=0;i<N;i++) if(lab[i]) q[qt++]=i;
+  while(qh<qt){ const i=q[qh++], x=i%w; if(dist[i]>rd+1) continue; for(const j of [x>0?i-1:-1,x<w-1?i+1:-1,i-w,i+w,x>0?i-w-1:-1,x<w-1?i-w+1:-1,x>0?i+w-1:-1,x<w-1?i+w+1:-1]) if(j>=0&&j<N&&!lab[j]&&ok(j)){ lab[j]=lab[i]; dist[j]=dist[i]+1; q[qt++]=j; } }
+  const area=new Float64Array(n+1); for(let i=0;i<N;i++) if(lab[i]) area[lab[i]]++;
+  const cm2=kw*kw, keep=new Set(); for(let l=1;l<=n;l++) if(area[l]*cm2>=(opt.minM2||1.2)*1e4&&area[l]*cm2<=400*1e4) keep.add(l);
+  // Contorno de cada estancia por los bordes de sus píxeles
+  const edges=new Map(); keep.forEach(l=>edges.set(l,new Map()));
+  const V=(x,y)=>y*(w+1)+x, add=(m,a,b)=>{ const k=m.get(a); if(k) k.push(b); else m.set(a,[b]); };
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){ const i=y*w+x, l=lab[i]; if(!keep.has(l)) continue; const m=edges.get(l);
+    if(y===0||lab[i-w]!==l) add(m,V(x,y),V(x+1,y)); if(x===w-1||lab[i+1]!==l) add(m,V(x+1,y),V(x+1,y+1));
+    if(y===h-1||lab[i+w]!==l) add(m,V(x+1,y+1),V(x,y+1)); if(x===0||lab[i-1]!==l) add(m,V(x,y+1),V(x,y)); }
+  // Huecos que dan al exterior en todo un lado (p. ej. entre la casa y la leyenda): se proponen desmarcados
+  const bb=new Map(); keep.forEach(l=>bb.set(l,{x0:w,y0:h,x1:0,y1:0,c:[0,0,0,0]}));
+  for(let i=0;i<N;i++){ const l=lab[i]; if(!keep.has(l)) continue; const x=i%w, y=(i-x)/w, B=bb.get(l);
+    if(x<B.x0) B.x0=x; if(x>B.x1) B.x1=x; if(y<B.y0) B.y0=y; if(y>B.y1) B.y1=y;
+    if(x>0&&OUT[i-1]) B.c[0]++; if(x<w-1&&OUT[i+1]) B.c[1]++; if(i>=w&&OUT[i-w]) B.c[2]++; if(i<N-w&&OUT[i+w]) B.c[3]++; }
+  const eps=Math.max(1.5,(opt.eps||10)/kw), out=[];
+  keep.forEach(l=>{ const m=edges.get(l); let best=null, bestA=0;
+    while(m.size){ const [a0]=m.keys(); const loop=[]; let a=a0;
+      for(let g=0;g<N*4;g++){ const L2=m.get(a); if(!L2) break; const b=L2.pop(); if(!L2.length) m.delete(a); loop.push([a%(w+1),Math.floor(a/(w+1))]); a=b; if(a===a0) break; }
+      const A=polyArea(loop); if(A>bestA){ bestA=A; best=loop; } }
+    if(!best) return;
+    let P=dpClosed(best,eps).map(([x,y])=>[x/s,y/s]); P=unbump(orthoPoly(P),120/PL.k,280/PL.k); if(P.length<3) return;
+    const B=bb.get(l), bw=B.x1-B.x0+1, bh=B.y1-B.y0+1, dudosa=B.c[0]>=bh*.6||B.c[1]>=bh*.6||B.c[2]>=bw*.6||B.c[3]>=bw*.6;
+    out.push({nombre:"",m2:null,P,dudosa,cy:P.reduce((t,p)=>t+p[1],0)/P.length,cx:P.reduce((t,p)=>t+p[0],0)/P.length}); });
+  out.sort((a,b)=>Math.round(a.cy/(PL.h/6))-Math.round(b.cy/(PL.h/6))||a.cx-b.cx);
+  out.forEach((e,i)=>e.nombre=`Estancia ${i+1}`);
+  return out;
+}
+// Quita los salientes hacia fuera que dejan los huecos de puertas y ventanas (los entrantes se quedan: pueden ser pilares)
+function unbump(P,dmax,wmax){
+  const col=(Q)=>Q.filter((p,i)=>{ const a=Q[(i-1+Q.length)%Q.length], b=Q[(i+1)%Q.length]; return Math.abs((p[0]-a[0])*(b[1]-p[1])-(p[1]-a[1])*(b[0]-p[0]))>1e-6; });
+  P=col(P);
+  for(let changed=true,g=0;changed&&g<60&&P.length>4;g++){ changed=false;
+    for(let i=0;i<P.length&&P.length>4;i++){ const n=P.length, A=P[i], B=P[(i+1)%n], C=P[(i+2)%n], D=P[(i+3)%n];
+      const ab=Math.hypot(B[0]-A[0],B[1]-A[1]), bc=Math.hypot(C[0]-B[0],C[1]-B[1]), cd=Math.hypot(D[0]-C[0],D[1]-C[1]);
+      if(ab>dmax||cd>dmax||bc>wmax||Math.abs(ab-cd)>dmax*.35) continue;
+      const dot=((B[0]-A[0])*(D[0]-C[0])+(B[1]-A[1])*(D[1]-C[1]))/((ab*cd)||1); if(dot>-.9) continue;
+      const Q=P.filter((_,j)=>j!==(i+1)%n&&j!==(i+2)%n), aP=polyArea(P), aQ=polyArea(Q); if(aQ>=aP||(Math.min(ab,cd)>dmax*.4&&aP-aQ>aP*.12)) continue;
+      const k=(i+1)%n, m=(i+2)%n, lo=Math.min(k,m), hi=Math.max(k,m);
+      // A y D quedan a la misma altura: se alinea D con A
+      const vertical=Math.abs(B[0]-A[0])<Math.abs(B[1]-A[1]); const Dn=vertical?[D[0],A[1]]:[A[0],D[1]];
+      const R=P.map(p=>p===D?Dn:p); R.splice(hi,1); R.splice(lo,1); P=col(R); changed=true; break; } }
+  return P;
+}
+function dpClosed(P,eps){
+  if(P.length<4) return P;
+  let ia=0, ib=0, dm=-1; for(let i=0;i<P.length;i++){ const d=Math.hypot(P[i][0]-P[0][0],P[i][1]-P[0][1]); if(d>dm){ dm=d; ib=i; } }
+  const dp=(Q)=>{ if(Q.length<3) return Q; const [a,b]=[Q[0],Q[Q.length-1]], L=Math.hypot(b[0]-a[0],b[1]-a[1])||1; let k=0,m=-1;
+    for(let i=1;i<Q.length-1;i++){ const d=Math.abs((b[0]-a[0])*(a[1]-Q[i][1])-(a[0]-Q[i][0])*(b[1]-a[1]))/L; if(d>m){ m=d; k=i; } }
+    return m>eps?[...dp(Q.slice(0,k+1)).slice(0,-1),...dp(Q.slice(k))]:[a,b]; };
+  const A=dp(P.slice(ia,ib+1)), B=dp([...P.slice(ib),P[0]]);
+  return [...A.slice(0,-1),...B.slice(0,-1)];
+}
+function planoScale(){
+  const [a,b]=PL.cal||[], cmv=+($("pl_cm")?.value||PL.calCm||0), d=a&&b?Math.hypot(b[0]-a[0],b[1]-a[1]):0;
+  if(!(d>3)){ toast("Pincha dos puntos del plano."); return false; }
+  if(!(cmv>0)){ toast("Escribe cuánto mide esa distancia en cm."); return false; }
+  PL.calCm=cmv; PL.k=cmv/d; return true;
+}
+function planoDetect(){
+  if(!planoScale()) return;
+  PL.step="reading"; PL.err=""; PL.free=true; planoRender();
+  setTimeout(()=>{
+    let E=[]; try{ E=detectRooms(); if(E.length<2){ const E2=detectRooms({dT:25,door:60}); if(E2.length>E.length) E=E2; } }catch(e){ E=[]; }
+    PL.noScale=false;
+    if(!E.length){ PL.step="cal"; PL.err="No he encontrado estancias cerradas. Comprueba la escala o dibújalas tú con «Dibujarlas yo»."; planoRender(); return; }
+    PL.rooms=roomsToCm(E); PL.off=new Set(PL.rooms.filter(e=>e.dudosa).map(e=>e.i)); PL.step="result"; planoRender();
+  },30);
+}
 async function planoTrace(){
-  const [a,b]=PL.cal||[], cmv=+($("pl_cm")?.value||0), d=a&&b?Math.hypot(b[0]-a[0],b[1]-a[1]):0;
-  if(!(d>3)){ toast("Pincha dos puntos del plano."); return; }
-  if(!(cmv>0)){ toast("Escribe cuánto mide esa distancia en cm."); return; }
-  PL.k=cmv/d; holdHist();
+  if(!planoScale()) return; holdHist();
   try{
     const {pid,bg}=await planoProject(), id=uid(), n=roomsOf(pid).length+1;
     await save("estancias",id,{proyectoId:pid,nombre:`Estancia ${n}`,ancho:bg.w,largo:bg.l,alto:250,calco:{plano:1,x:0,y:0,w:bg.w,l:bg.l},creado:Date.now()});
@@ -3675,18 +3782,17 @@ function planoRender(){
   if(PL.step==="pick"){ B.innerHTML=`${err}<p>Sube una foto o una captura del plano de tu casa (la de la inmobiliaria o la del proyecto vale) y se crean las estancias con su forma y sus medidas. También puedes subir un archivo DXF de AutoCAD.</p>
     <label class="pl-drop"><input type="file" id="pl_file" accept="image/*,.dxf,.dwg"><span style="font-size:30px" aria-hidden="true">📷</span>Elegir imagen o DXF<small>JPG, PNG, captura del móvil o .dxf</small></label>
     <p class="muted" style="font-size:13px">Para que salga bien: que se lea la barra de escala o alguna cota, y mejor si sale la tabla de superficies en m².</p>`; return; }
-  if(PL.step==="reading"){ B.innerHTML=`${planoSVG()}<div class="pl-wait">Claude está leyendo el plano… tarda entre 20 segundos y un minuto.</div>`; return; }
+  if(PL.step==="reading"){ B.innerHTML=`${planoSVG()}<div class="pl-wait">${PL.free?"Buscando las paredes…":"Claude está leyendo el plano… tarda entre 20 segundos y un minuto."}</div>`; return; }
   if(PL.step==="img"){
-    const auto=PL.auto===null?`<div class="pl-wait">Comprobando la lectura automática…</div>`
-      :PL.auto?`<div class="pl-acts"><button class="btn primary" type="button" data-pl="read">✨ Crear las estancias automáticamente</button><button class="btn" type="button" data-pl="cal">✏️ Calcar a mano</button></div>`
-      :`<p class="muted" style="font-size:13px">${HAS_API?"La lectura automática aún no está activada en esta web (falta la clave de Claude en Vercel).":"La lectura automática no está disponible en esta vista."} Puedes calcarlo a mano: marcas la escala y dibujas cada estancia encima.</p><div class="pl-acts"><button class="btn primary" type="button" data-pl="cal">✏️ Calcar a mano</button></div>`;
+    const auto=`<p>Marca la escala del plano y la app busca sola las paredes y crea las estancias.</p><div class="pl-acts"><button class="btn primary" type="button" data-pl="cal">📏 Marcar la escala</button>${PL.auto?`<button class="btn" type="button" data-pl="read" title="Lee también los nombres y los m² del plano">✨ Leer con Claude</button>`:""}</div>`;
     B.innerHTML=`${err}${planoSVG()}${auto}<div class="pl-acts"><button class="btn ghost sm" type="button" data-pl="again">Elegir otra imagen</button></div>`; return; }
   if(PL.step==="result"){
-    const R=PL.rooms, poly=R.map(e=>`<polygon points="${e.P.map(q=>q.join(",")).join(" ")}" fill="${PL_COL[e.i%PL_COL.length]}" fill-opacity=".22" stroke="${PL_COL[e.i%PL_COL.length]}" stroke-width="${Math.max(2,PL.w/400)}"/>`).join("");
+    const R=PL.rooms, fs=Math.max(14,PL.w/45), poly=R.map(e=>{ const c=PL_COL[e.i%PL_COL.length], on=!PL.off?.has(e.i), xs=e.P.map(p=>p[0]), ys=e.P.map(p=>p[1]), mx=(Math.min(...xs)+Math.max(...xs))/2, my=(Math.min(...ys)+Math.max(...ys))/2;
+      return `<g data-plr="${e.i}" style="cursor:pointer" opacity="${on?1:.3}"><polygon points="${e.P.map(q=>q.join(",")).join(" ")}" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="${Math.max(2,PL.w/400)}"/><circle cx="${mx}" cy="${my}" r="${fs*.8}" fill="${c}"/><text x="${mx}" y="${my}" dy=".35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="#fff">${e.i+1}</text></g>`; }).join("");
     B.innerHTML=`${err}${planoSVG(poly)}
-      <p>He encontrado <b>${R.length} estancia${R.length>1?"s":""}</b>. Quita las que no quieras y cambia el nombre si hace falta.${PL.noScale?" <b>No he podido sacar la escala</b>: revisa las medidas después.":""}</p>
-      <ul class="pl-list">${R.map(e=>{ const {W,L}=bbox(e.Q); return `<li><input type="checkbox" id="pl_on${e.i}" checked aria-label="Crear ${esc(e.nombre)}"><span class="pl-sw" style="background:${PL_COL[e.i%PL_COL.length]}"></span><input type="text" id="pl_n${e.i}" value="${esc(e.nombre)}"><small>${cm(W)}×${cm(L)} cm · ${m2(e.area)} m²${e.m2?` (plano: ${m2(e.m2)})`:""}</small></li>`; }).join("")}</ul>
-      ${dest}<div class="pl-acts"><button class="btn primary" type="button" data-pl="create">Crear las estancias</button><button class="btn" type="button" data-pl="cal">✏️ Mejor calcar a mano</button></div>
+      <p>He encontrado <b>${R.length} estancia${R.length>1?"s":""}</b>. ${PL.free?`Ponles nombre (el número coincide con el del plano) y quita las que sobren: pulsa una en el plano para marcarla o desmarcarla.${PL.rooms.some(e=>e.dudosa)?" Las desmarcadas parecen espacios de fuera de la casa.":""}`:"Quita las que no quieras y cambia el nombre si hace falta."}${PL.noScale?" <b>No he podido sacar la escala</b>: revisa las medidas después.":""}</p>
+      <ul class="pl-list">${R.map(e=>{ const {W,L}=bbox(e.Q); return `<li><input type="checkbox" id="pl_on${e.i}"${PL.off?.has(e.i)?"":" checked"} aria-label="Crear ${esc(e.nombre)}"><span class="pl-sw pl-num" style="background:${PL_COL[e.i%PL_COL.length]}">${e.i+1}</span><input type="text" id="pl_n${e.i}" value="${esc(e.nombre)}"><small>${cm(W)}×${cm(L)} cm · ${m2(e.area)} m²${e.m2?` (plano: ${m2(e.m2)})`:""}</small></li>`; }).join("")}</ul>
+      ${dest}<div class="pl-acts"><button class="btn primary" type="button" data-pl="create">Crear las estancias</button>${PL.free?`<button class="btn" type="button" data-pl="trace">✏️ Mejor las dibujo yo</button><button class="btn ghost sm" type="button" data-pl="cal">Cambiar la escala</button>`:`<button class="btn" type="button" data-pl="cal">✏️ Mejor calcar a mano</button>`}</div>
       <p class="muted" style="font-size:12px">Las formas son aproximadas: después pulsa una medida azul en «Editar estancia» para ajustarla con lo que midas.</p>`; return; }
   if(PL.step==="cal"){
     const [a,b]=PL.cal||[], sw=Math.max(2,PL.w/300), mk=q=>`<circle cx="${q[0]}" cy="${q[1]}" r="${sw*3}" fill="#F86C2F" stroke="#fff" stroke-width="${sw}"/>`;
@@ -3694,18 +3800,20 @@ function planoRender(){
     B.innerHTML=`${err}<p><b>1 ·</b> Pincha los dos extremos de algo cuya medida sepas: la barra de escala (por ejemplo de 0 a 5 m) o una cota del plano.</p>
       ${planoSVG(line+(a?mk(a):"")+(b?mk(b):""),"cal")}
       <div class="pl-acts"><label for="pl_cm" style="font-weight:600"><b>2 ·</b> Esa distancia mide</label><input id="pl_cm" type="number" min="1" step="1" inputmode="numeric" value="${PL.calCm||500}" style="width:100px"> cm${a?` <button class="btn ghost sm" type="button" data-pl="calReset">Volver a marcar</button>`:""}</div>
-      ${dest}<div class="pl-acts"><button class="btn primary" type="button" data-pl="trace"${a&&b?"":" disabled"}>Calcar las estancias</button><button class="btn ghost sm" type="button" data-pl="back">Atrás</button></div>`; return; }
+      ${dest}<div class="pl-acts"><button class="btn primary" type="button" data-pl="detect"${a&&b?"":" disabled"}>✨ Detectar las estancias</button><button class="btn" type="button" data-pl="trace"${a&&b?"":" disabled"}>✏️ Dibujarlas yo</button><button class="btn ghost sm" type="button" data-pl="back">Atrás</button></div><p class="muted" style="font-size:12px;margin:0">La detección se hace en tu móvil u ordenador: es gratis y la imagen no sale de aquí.</p>`; return; }
 }
-$("planoBody").addEventListener("change",e=>{ if(e.target.id==="pl_file") planoFile(e.target.files[0]); if(e.target.id==="pl_cm") PL.calCm=+e.target.value||500; });
+$("planoBody").addEventListener("change",e=>{ const m=/^pl_on(\d+)$/.exec(e.target.id||""); if(m){ PL.off ||= new Set(); e.target.checked?PL.off.delete(+m[1]):PL.off.add(+m[1]); const g=document.querySelector(`[data-plr="${m[1]}"]`); if(g) g.setAttribute("opacity",e.target.checked?1:.3); } if(e.target.id==="pl_file") planoFile(e.target.files[0]); if(e.target.id==="pl_cm") PL.calCm=+e.target.value||500; });
 $("planoBody").addEventListener("click",e=>{
   const b=e.target.closest("[data-pl]");
   if(b){ const a=b.dataset.pl;
-    if(a==="read") planoRead(); else if(a==="create") planoCreate(); else if(a==="trace") planoTrace();
+    if(a==="read"){ PL.free=false; planoRead(); } else if(a==="detect") planoDetect(); else if(a==="create") planoCreate(); else if(a==="trace") planoTrace();
     else if(a==="cal"){ PL.step="cal"; PL.cal=[]; PL.err=""; planoRender(); }
     else if(a==="calReset"){ PL.cal=[]; planoRender(); }
     else if(a==="back"){ PL.step=PL.rooms?"result":"img"; planoRender(); }
     else if(a==="again"){ for(const k in PL) delete PL[k]; PL.step="pick"; planoRender(); }
     return; }
+  const g=e.target.closest("[data-plr]");
+  if(g&&PL.step==="result"){ const i=+g.dataset.plr; PL.off ||= new Set(); PL.off.has(i)?PL.off.delete(i):PL.off.add(i); const cb=$("pl_on"+i); if(cb) cb.checked=!PL.off.has(i); g.setAttribute("opacity",PL.off.has(i)?.3:1); return; }
   const svg=e.target.closest("#pl_svg"); if(!svg||PL.step!=="cal") return;
   const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const q=pt.matrixTransform(svg.getScreenCTM().inverse());
   const v=[Math.max(0,Math.min(PL.w,q.x)),Math.max(0,Math.min(PL.h,q.y))];
