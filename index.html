@@ -599,7 +599,14 @@ s.old{color:var(--muted);font-size:.6em;font-weight:500;margin-left:4px}
 .pl-drop{display:flex;flex-direction:column;align-items:center;gap:6px;padding:28px 16px;border:2px dashed var(--blue);border-radius:12px;background:var(--blue-soft);color:var(--blue-ink);font-weight:700;cursor:pointer;text-align:center}
 .pl-drop small{font-weight:400;color:var(--muted)}
 .pl-drop input{position:absolute;opacity:0;width:1px;height:1px}
-.pl-view{width:100%;max-height:52vh;border:1px solid var(--line);border-radius:10px;background:#fff;touch-action:manipulation}
+.pl-view{width:100%;max-height:52vh;border:1px solid var(--line);border-radius:10px;background:#fff;touch-action:none}
+.pl-wrap{position:relative}
+.pl-zoom{position:absolute;top:8px;right:8px;display:flex;gap:4px;align-items:center}
+.pl-zb{min-width:36px;height:36px;padding:0 9px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--blue-ink);font:700 17px/1 system-ui,sans-serif;cursor:pointer;box-shadow:0 1px 4px rgb(0 0 0 / .12)}
+.pl-zb:disabled{opacity:.4;cursor:default}
+.pl-zl{font:700 12px/1 system-ui,sans-serif;color:var(--blue-ink);background:var(--surface);border-radius:6px;padding:4px 6px}
+.pl-zl:empty{display:none}
+.pl-hint{margin:0;font-size:12px;color:var(--muted)}
 .pl-view.cal{cursor:crosshair}
 .pl-acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .pl-err{background:#FFF0EA;border:1px solid var(--red);color:var(--granate);border-radius:8px;padding:8px 10px;font-size:14px}
@@ -3596,7 +3603,7 @@ async function planoFile(f){
   const u=URL.createObjectURL(f), img=new Image();
   try{ await new Promise((ok,ko)=>{ img.onload=ok; img.onerror=ko; img.src=u; }); }catch{ URL.revokeObjectURL(u); PL.err="No he podido abrir esa imagen."; planoRender(); return; }
   const a=imgToJpeg(img,1568,.85); URL.revokeObjectURL(u);
-  Object.assign(PL,{img:a.url,w:a.w,h:a.h,canvas:a.canvas,step:"img",cal:[],auto:null,err:"",rooms:null});
+  Object.assign(PL,{img:a.url,w:a.w,h:a.h,canvas:a.canvas,step:"img",cal:[],auto:null,err:"",rooms:null,z:1,cx:a.w/2,cy:a.h/2});
   planoRender(); PL.auto=await planoAutoAvail(); planoRender();
 }
 async function planoAutoAvail(){
@@ -3774,8 +3781,25 @@ async function planoTrace(){
     toast("Pincha las esquinas de una estancia encima del plano. Para la siguiente, usa «Otra habitación al lado».");
   }catch{ toast("No se ha podido preparar el plano."); }
 }
-function planoSVG(extra,cls=""){ return `<svg class="pl-view ${cls}" id="pl_svg" viewBox="0 0 ${PL.w} ${PL.h}" preserveAspectRatio="xMidYMid meet"><image href="${PL.img}" x="0" y="0" width="${PL.w}" height="${PL.h}"/>${extra||""}</svg>`; }
-function planoRender(){
+function planoSVG(extra,cls=""){ return `<div class="pl-wrap"><svg class="pl-view ${cls}" id="pl_svg" viewBox="${plVB().join(" ")}" preserveAspectRatio="xMidYMid meet"><image href="${PL.img}" x="0" y="0" width="${PL.w}" height="${PL.h}"/><g id="pl_ov">${extra||""}</g></svg><div class="pl-zoom"><span class="pl-zl" id="pl_zl"></span><button type="button" class="pl-zb" data-plz="in" title="Acercar (Ctrl +)" aria-label="Acercar">＋</button><button type="button" class="pl-zb" data-plz="out" id="pl_zout" title="Alejar (Ctrl −)" aria-label="Alejar">－</button><button type="button" class="pl-zb" data-plz="fit" title="Ver la imagen entera (Ctrl 0)" aria-label="Ver entera">⤢</button></div></div><p class="pl-hint">Pellizca con dos dedos, usa la rueda del ratón o Ctrl + / Ctrl − para acercar · arrastra para moverte</p>`; }
+// Zoom de la imagen: PL.z (1 = entera) centrado en PL.cx, PL.cy (píxeles de la imagen)
+const plZ=()=>PL.z||1;
+function plVB(){ const z=plZ(), w=PL.w/z, h=PL.h/z; let cx=PL.cx??PL.w/2, cy=PL.cy??PL.h/2;
+  cx=Math.min(Math.max(cx,w/2),PL.w-w/2); cy=Math.min(Math.max(cy,h/2),PL.h-h/2); PL.cx=cx; PL.cy=cy; return [cx-w/2,cy-h/2,w,h]; }
+function plApply(){ const svg=$("pl_svg"); if(!svg) return; const z=plZ(); svg.setAttribute("viewBox",plVB().join(" "));
+  svg.querySelectorAll("[data-r]").forEach(c=>c.setAttribute("r",+c.dataset.r/z)); svg.style.cursor=PL.step==="cal"?"crosshair":z>1?"grab":"";
+  const zo=$("pl_zout"); if(zo) zo.disabled=z<=1; const zl=$("pl_zl"); if(zl) zl.textContent=z>1.01?`${Math.round(z*10)/10}×`:""; }
+function plZoom(f,px,py){ const z=plZ(), nz=Math.min(20,Math.max(1,z*f)); if(nz===z) return;
+  const cx=PL.cx??PL.w/2, cy=PL.cy??PL.h/2; if(px==null){ px=cx; py=cy; }
+  PL.cx=px-(px-cx)*z/nz; PL.cy=py-(py-cy)*z/nz; PL.z=nz; plApply(); }
+const plToImg=(svg,x,y)=>{ const pt=svg.createSVGPoint(); pt.x=x; pt.y=y; return pt.matrixTransform(svg.getScreenCTM().inverse()); };
+function calOverlay(){
+  const [a,b]=PL.cal||[], sw=Math.max(2,PL.w/300), z=plZ();
+  const mk=q=>`<circle cx="${q[0]}" cy="${q[1]}" data-r="${sw*4}" r="${sw*4/z}" fill="#F86C2F" fill-opacity=".18" stroke="#F86C2F" stroke-width="2" vector-effect="non-scaling-stroke"/><circle cx="${q[0]}" cy="${q[1]}" data-r="${sw*.7}" r="${sw*.7/z}" fill="#C2410C"/>`;
+  return (a&&b?`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#F86C2F" stroke-width="2" vector-effect="non-scaling-stroke"/>`:"")+(a?mk(a):"")+(b?mk(b):"");
+}
+function planoRender(){ planoRender0(); plApply(); }
+function planoRender0(){
   const B=$("planoBody"); if(!B) return; const err=PL.err?`<div class="pl-err">${esc(PL.err)}</div>`:"";
   const m2=v=>v.toLocaleString("es-ES",{maximumFractionDigits:2});
   const p=proyecto(), dest=`<div class="pl-acts"><label for="pl_dest" style="font-weight:600">Dónde</label>${p?`<select id="pl_dest"><option value="cur">En «${esc(p.nombre)}»</option><option value="new">En un proyecto nuevo</option></select>`:`<input id="pl_pname" type="text" placeholder="Nombre del proyecto, p. ej. Mi casa">`}</div>`;
@@ -3795,15 +3819,17 @@ function planoRender(){
       ${dest}<div class="pl-acts"><button class="btn primary" type="button" data-pl="create">Crear las estancias</button>${PL.free?`<button class="btn" type="button" data-pl="trace">✏️ Mejor las dibujo yo</button><button class="btn ghost sm" type="button" data-pl="cal">Cambiar la escala</button>`:`<button class="btn" type="button" data-pl="cal">✏️ Mejor calcar a mano</button>`}</div>
       <p class="muted" style="font-size:12px">Las formas son aproximadas: después pulsa una medida azul en «Editar estancia» para ajustarla con lo que midas.</p>`; return; }
   if(PL.step==="cal"){
-    const [a,b]=PL.cal||[], sw=Math.max(2,PL.w/300), mk=q=>`<circle cx="${q[0]}" cy="${q[1]}" r="${sw*3}" fill="#F86C2F" stroke="#fff" stroke-width="${sw}"/>`;
-    const line=a&&b?`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#F86C2F" stroke-width="${sw*1.5}"/>`:"";
-    B.innerHTML=`${err}<p><b>1 ·</b> Pincha los dos extremos de algo cuya medida sepas: la barra de escala (por ejemplo de 0 a 5 m) o una cota del plano.</p>
-      ${planoSVG(line+(a?mk(a):"")+(b?mk(b):""),"cal")}
+    const [a,b]=PL.cal||[];
+    B.innerHTML=`${err}<p><b>1 ·</b> Pincha los dos extremos de algo cuya medida sepas: la barra de escala (por ejemplo de 0 a 5 m) o una cota del plano. Acércate para hacerlo exacto; si un punto no ha quedado bien, arrástralo.</p>
+      ${planoSVG(calOverlay(),"cal")}
       <div class="pl-acts"><label for="pl_cm" style="font-weight:600"><b>2 ·</b> Esa distancia mide</label><input id="pl_cm" type="number" min="1" step="1" inputmode="numeric" value="${PL.calCm||500}" style="width:100px"> cm${a?` <button class="btn ghost sm" type="button" data-pl="calReset">Volver a marcar</button>`:""}</div>
       ${dest}<div class="pl-acts"><button class="btn primary" type="button" data-pl="detect"${a&&b?"":" disabled"}>✨ Detectar las estancias</button><button class="btn" type="button" data-pl="trace"${a&&b?"":" disabled"}>✏️ Dibujarlas yo</button><button class="btn ghost sm" type="button" data-pl="back">Atrás</button></div><p class="muted" style="font-size:12px;margin:0">La detección se hace en tu móvil u ordenador: es gratis y la imagen no sale de aquí.</p>`; return; }
 }
 $("planoBody").addEventListener("change",e=>{ const m=/^pl_on(\d+)$/.exec(e.target.id||""); if(m){ PL.off ||= new Set(); e.target.checked?PL.off.delete(+m[1]):PL.off.add(+m[1]); const g=document.querySelector(`[data-plr="${m[1]}"]`); if(g) g.setAttribute("opacity",e.target.checked?1:.3); } if(e.target.id==="pl_file") planoFile(e.target.files[0]); if(e.target.id==="pl_cm") PL.calCm=+e.target.value||500; });
 $("planoBody").addEventListener("click",e=>{
+  const zb=e.target.closest("[data-plz]");
+  if(zb){ const k=zb.dataset.plz; if(k==="fit"){ PL.z=1; plApply(); } else plZoom(k==="in"?1.6:1/1.6); return; }
+  if(e.target.closest("#pl_svg")&&PL.dragged){ PL.dragged=false; return; }
   const b=e.target.closest("[data-pl]");
   if(b){ const a=b.dataset.pl;
     if(a==="read"){ PL.free=false; planoRead(); } else if(a==="detect") planoDetect(); else if(a==="create") planoCreate(); else if(a==="trace") planoTrace();
@@ -3815,10 +3841,38 @@ $("planoBody").addEventListener("click",e=>{
   const g=e.target.closest("[data-plr]");
   if(g&&PL.step==="result"){ const i=+g.dataset.plr; PL.off ||= new Set(); PL.off.has(i)?PL.off.delete(i):PL.off.add(i); const cb=$("pl_on"+i); if(cb) cb.checked=!PL.off.has(i); g.setAttribute("opacity",PL.off.has(i)?.3:1); return; }
   const svg=e.target.closest("#pl_svg"); if(!svg||PL.step!=="cal") return;
-  const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const q=pt.matrixTransform(svg.getScreenCTM().inverse());
+  const q=plToImg(svg,e.clientX,e.clientY);
   const v=[Math.max(0,Math.min(PL.w,q.x)),Math.max(0,Math.min(PL.h,q.y))];
   PL.cal=(PL.cal||[]).length>=2?[v]:[...(PL.cal||[]),v]; planoRender();
 });
+// Pellizcar, arrastrar para moverse, arrastrar un punto marcado, rueda y Ctrl +/−
+const PLP=new Map(); let plG=null;
+$("planoBody").addEventListener("pointerdown",e=>{
+  const svg=e.target.closest("#pl_svg"); if(!svg) return;
+  PLP.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(PLP.size===1) PL.dragged=false;
+  if(PLP.size===2){ const [a,b]=[...PLP.values()], m=plToImg(svg,(a.x+b.x)/2,(a.y+b.y)/2); plG={t:"pinch",d:Math.hypot(a.x-b.x,a.y-b.y)||1,z:plZ(),mx:m.x,my:m.y}; PL.dragged=true; PLP.forEach((_,id)=>{ try{ svg.setPointerCapture(id); }catch{} }); return; }
+  if(PLP.size>2) return;
+  let pi=-1; const M=svg.getScreenCTM();
+  if(PL.step==="cal") (PL.cal||[]).forEach((q,i)=>{ if(Math.hypot(M.a*q[0]+M.e-e.clientX,M.d*q[1]+M.f-e.clientY)<24) pi=i; });
+  plG={t:pi>=0?"pt":"pan",i:pi,x:e.clientX,y:e.clientY,cx:PL.cx??PL.w/2,cy:PL.cy??PL.h/2,moved:false};
+});
+$("planoBody").addEventListener("pointermove",e=>{
+  const p=PLP.get(e.pointerId), svg=$("pl_svg"); if(!p||!plG||!svg) return; p.x=e.clientX; p.y=e.clientY;
+  if(plG.t==="pinch"){ if(PLP.size<2) return; const [a,b]=[...PLP.values()], d=Math.hypot(a.x-b.x,a.y-b.y), mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+    PL.z=Math.min(20,Math.max(1,plG.z*d/plG.d)); plApply(); const c=plToImg(svg,mx,my); PL.cx+=plG.mx-c.x; PL.cy+=plG.my-c.y; plApply(); return; }
+  const dx=e.clientX-plG.x, dy=e.clientY-plG.y; if(!plG.moved&&Math.hypot(dx,dy)<6) return; if(!plG.moved){ try{ svg.setPointerCapture(e.pointerId); }catch{} } plG.moved=true; PL.dragged=true;
+  if(plG.t==="pt"){ const q=plToImg(svg,e.clientX,e.clientY); PL.cal[plG.i]=[Math.max(0,Math.min(PL.w,q.x)),Math.max(0,Math.min(PL.h,q.y))]; $("pl_ov").innerHTML=calOverlay(); return; }
+  if(plZ()>1){ const k=1/svg.getScreenCTM().a; PL.cx=plG.cx-dx*k; PL.cy=plG.cy-dy*k; plApply(); }
+});
+const plUp=e=>{ PLP.delete(e.pointerId); if(!PLP.size) plG=null; else if(plG?.t==="pinch"&&PLP.size<2) plG=null; };
+$("planoBody").addEventListener("pointerup",plUp); $("planoBody").addEventListener("pointercancel",plUp);
+$("planoBody").addEventListener("wheel",e=>{ const svg=e.target.closest("#pl_svg"); if(!svg) return; e.preventDefault();
+  const q=plToImg(svg,e.clientX,e.clientY); plZoom(Math.exp(-e.deltaY*(e.ctrlKey?.01:.002)),q.x,q.y); },{passive:false});
+document.addEventListener("keydown",e=>{ if(!$("dlgPlano")?.open||!$("pl_svg")||!(e.ctrlKey||e.metaKey)) return;
+  if(e.key==="+"||e.key==="="||e.code==="NumpadAdd"){ e.preventDefault(); plZoom(1.4); }
+  else if(e.key==="-"||e.code==="NumpadSubtract"){ e.preventDefault(); plZoom(1/1.4); }
+  else if(e.key==="0"){ e.preventDefault(); PL.z=1; plApply(); } },true);
 function toastAction(msg,label,fn){ showToast(msg,label,fn,7000); }
 
 /* ---------- Medidas apuntadas: huecos y aparatos para buscar muebles que encajen ---------- */
