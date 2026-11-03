@@ -620,6 +620,8 @@ s.old{color:var(--muted);font-size:.6em;font-weight:500;margin-left:4px}
 .pl-list li{display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
 .pl-list input[type=text]{flex:1;min-width:0}
 .pl-list small{color:var(--muted);white-space:nowrap}
+.pl-list li{flex-wrap:wrap}
+.pl-list [data-plredraw]{margin-left:auto;padding:4px 8px}
 .pl-sw{width:14px;height:14px;border-radius:4px;flex:none}
 .pl-num{width:22px;height:22px;border-radius:50%;color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center}
 .dxf-btn{background:var(--blue-soft);border-color:var(--blue);color:var(--blue-ink);font-weight:600}
@@ -3790,17 +3792,23 @@ async function planoProject(){
   if(!p||dest==="new"){ const id=uid(); await save("proyectos",id,{nombre:($("pl_pname")?.value||"").trim()||"Mi casa",tipo:"casa",presupuesto:0,direccion:"",notas:"",creado:Date.now()}); S.proyId=id; lsSet("proletix:proy",id); p=S.proyectos.find(x=>x.id===id); }
   const bg=planoBg(), {id,...b}=p; await save("proyectos",id,{...b,plano:bg}); return {pid:id,bg};
 }
-async function planoCreate(){
-  if(PL.free&&PL.mode==="una") return planoCreateWhole();
+async function planoCreate(redraw){
+  if(PL.free&&PL.mode==="una"&&redraw==null) return planoCreateWhole();
+  if(redraw!=null){ const cb=$("pl_on"+redraw); if(cb) cb.checked=true; }
   const sel=(PL.rooms||[]).filter(e=>$("pl_on"+e.i)?.checked);
   if(!sel.length){ toast("Marca al menos una estancia."); return; }
   holdHist();
   try{
     const {pid,bg}=await planoProject(); let first=null, n=0;
-    for(const e of sel){ const id=uid(), {W,L}=bbox(e.Q); first ||= id;
+    let rid=null;
+    for(const e of sel){ const id=uid(), {W,L}=bbox(e.Q); first ||= id; if(e.i===redraw) rid=id;
       await save("estancias",id,{proyectoId:pid,nombre:($("pl_n"+e.i)?.value||"").trim()||e.nombre,ancho:W,largo:L,alto:250,puntos:e.Q.map(([x,y])=>({x,y})),calco:{plano:1,x:-e.mx,y:-e.my,w:bg.w,l:bg.l},creado:Date.now()+(n++)}); }
-    $("dlgPlano").close(); S.view="proyecto"; S.tab="plano"; S.vista="2d"; S.roomId=first; S.editShape=false; render();
-    toast(`${sel.length} estancia${sel.length>1?"s creadas":" creada"}. Revisa las medidas en «Editar estancia».`);
+    $("dlgPlano").close(); S.view="proyecto"; S.tab="plano"; S.vista="2d"; S.roomId=rid||first; S.editShape=false;
+    const rr=rid&&S.estancias.find(x=>x.id===rid);
+    if(rr){ S.editShape=true; S.paint=false; S.sel=null; S.shapeSel=null; S.fixForm=null; S.holeForm=null; S.wallDraw=null; const {ox,oy}=drawFrame(rr,1.5,600);
+      S.drawMode=true; S.drawNew=false; S.drawExt=false; S.drawRef=null; S.drawSel=null; S.drawPts=[]; S.drawOff={x:ox,y:oy}; render(); window.scrollTo({top:0,behavior:"smooth"});
+      toast(`Dibuja «${rr.nombre}» pinchando sus esquinas encima del plano. Las demás ya están creadas.`); return; }
+    render(); toast(`${sel.length} estancia${sel.length>1?"s creadas":" creada"}. Revisa las medidas en «Editar estancia».`);
   }catch{ toast("No se han podido crear las estancias."); }
 }
 
@@ -4157,7 +4165,8 @@ function planoRender0(){
       return `<g data-plr="${e.i}" style="cursor:pointer" opacity="${on?1:.3}"><polygon points="${e.P.map(q=>q.join(",")).join(" ")}" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="${Math.max(2,PL.w/400)}"/><circle cx="${mx}" cy="${my}" r="${fs*.8}" fill="${c}"/><text x="${mx}" y="${my}" dy=".35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="#fff">${e.i+1}</text></g>`; }).join("");
     B.innerHTML=`${err}${PL.free&&PL.whole?modeSeg():""}${planoSVG(poly)}
       <p>He encontrado <b>${R.length} estancia${R.length>1?"s":""}</b>. ${PL.free?`Ponles nombre (el número coincide con el del plano) y quita las que sobren: pulsa una en el plano para marcarla o desmarcarla.${PL.rooms.some(e=>e.dudosa)?" Las desmarcadas parecen espacios de fuera de la casa.":""}`:"Quita las que no quieras y cambia el nombre si hace falta."}${PL.noScale?" <b>No he podido sacar la escala</b>: revisa las medidas después.":""}</p>
-      <ul class="pl-list">${R.map(e=>{ const {W,L}=bbox(e.Q); return `<li><input type="checkbox" id="pl_on${e.i}"${PL.off?.has(e.i)?"":" checked"} aria-label="Crear ${esc(e.nombre)}"><span class="pl-sw pl-num" style="background:${PL_COL[e.i%PL_COL.length]}">${e.i+1}</span><input type="text" id="pl_n${e.i}" value="${esc((PL.free&&plLabs().find(l=>l.room===e.i)?.t)||e.nombre)}"><small>${cm(W)}×${cm(L)} cm · ${m2(e.area)} m²${e.m2?` (plano: ${m2(e.m2)})`:""}</small></li>`; }).join("")}</ul>
+      <ul class="pl-list">${R.map(e=>{ const {W,L}=bbox(e.Q); return `<li><input type="checkbox" id="pl_on${e.i}"${PL.off?.has(e.i)?"":" checked"} aria-label="Crear ${esc(e.nombre)}"><span class="pl-sw pl-num" style="background:${PL_COL[e.i%PL_COL.length]}">${e.i+1}</span><input type="text" id="pl_n${e.i}" value="${esc((PL.free&&plLabs().find(l=>l.room===e.i)?.t)||e.nombre)}"><small>${cm(W)}×${cm(L)} cm · ${m2(e.area)} m²${e.m2?` (plano: ${m2(e.m2)})`:""}</small><button class="btn ghost sm" type="button" data-plredraw="${e.i}" title="Crear todas y dibujar esta a mano encima del plano">✏️ Dibujarla yo</button></li>`; }).join("")}</ul>
+      <p class="muted" style="font-size:12px;margin:0">¿Hay una que no ha salido bien? Pulsa su «✏️ Dibujarla yo»: se crean las demás y se abre esa para que la dibujes encima del plano.</p>
       ${dest}<div class="pl-acts"><button class="btn primary" type="button" data-pl="create">Crear las estancias</button>${PL.free?`<button class="btn" type="button" data-pl="trace">✏️ Mejor las dibujo yo</button><button class="btn ghost sm" type="button" data-pl="cal">Cambiar la escala</button>`:`<button class="btn" type="button" data-pl="cal">✏️ Mejor calcar a mano</button>`}</div>
       <p class="muted" style="font-size:12px">Las formas son aproximadas: después pulsa una medida azul en «Editar estancia» para ajustarla con lo que midas.</p>`; return; }
   if(PL.step==="cal"){
@@ -4174,6 +4183,7 @@ $("planoBody").addEventListener("input",e=>{ const id=e.target.id||""; let m;
 $("planoBody").addEventListener("change",e=>{ const m=/^pl_on(\d+)$/.exec(e.target.id||""); if(m){ PL.off ||= new Set(); e.target.checked?PL.off.delete(+m[1]):PL.off.add(+m[1]); const g=document.querySelector(`[data-plr="${m[1]}"]`); if(g) g.setAttribute("opacity",e.target.checked?1:.3); } if(e.target.id==="pl_file") planoFile(e.target.files[0]); if(e.target.id==="pl_cm") PL.calCm=+e.target.value||500; });
 $("planoBody").addEventListener("click",e=>{
   const tb=e.target.closest("[data-pltab]"); if(tb&&!PL.dragged){ const i=+tb.dataset.pltab; PL.tabOff ||= new Set(); PL.tabOff.has(i)?PL.tabOff.delete(i):PL.tabOff.add(i); planoRender(); return; }
+  const rd=e.target.closest("[data-plredraw]"); if(rd){ planoCreate(+rd.dataset.plredraw); return; }
   const pm=e.target.closest("[data-plmode]"); if(pm){ PL.mode=pm.dataset.plmode; planoRender(); return; }
   const zb=e.target.closest("[data-plz]");
   if(zb){ const k=zb.dataset.plz; if(k==="fit"){ PL.z=1; plApply(); } else plZoom(k==="in"?1.6:1/1.6); return; }
