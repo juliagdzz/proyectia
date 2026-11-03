@@ -551,7 +551,7 @@ s.old{color:var(--muted);font-size:.6em;font-weight:500;margin-left:4px}
 .fit{font-size:12px;font-weight:600}.fit.ok{color:var(--ok)}.fit.bad{color:var(--bad)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 /* Herramientas en la esquina del plano: deshacer y bloquear */
-.plan-tools{position:sticky;top:8px;z-index:4;height:0;display:flex;gap:6px;padding-left:4px}
+.plan-tools{position:sticky;top:8px;z-index:4;height:0;display:flex;flex-wrap:wrap;gap:6px;padding:0 4px;align-items:flex-start}
 .pt-btn{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;border-radius:999px;border:1px solid var(--blue);background:rgb(255 255 255 / .94);color:var(--blue-ink);font-weight:700;font-size:14px;box-shadow:0 4px 14px rgb(35 64 126 / .16);cursor:pointer;white-space:nowrap}
 .pt-btn span[aria-hidden]{font-size:18px}
 .pt-btn[disabled]{opacity:.45;cursor:default;box-shadow:none}
@@ -2066,7 +2066,7 @@ function planHTML(p,r){
         ${es&&S.drawMode?`<g id="drawLayer">${drawLayerSVG(DR,hs)}</g>`:es?`<g id="shapeLayer"${S.wallDraw?' pointer-events="none" opacity=".35"':""}>${shapeHandlesSVG(P,hs)}</g><g id="holeLayer"${S.wallDraw?' pointer-events="none"':""}>${items.filter(isHueco).map(i=>holeSVG(i,hs)).join("")}</g>${S.wallDraw?`<g id="wallDrawLayer"><rect x="${VB[0]}" y="${VB[1]}" width="${VB[2]}" height="${VB[3]}" fill="transparent" style="cursor:crosshair"/><g id="wdPrev">${wallDrawSVG(P,hs)}</g></g>`:""}`:""}
       </svg>
       <span class="hint">${es&&S.drawMode?"Pincha para poner cada esquina · cuadrícula de 50 cm":`${area} m² · cuadrícula de 50 cm · ${es?"pulsa una medida para cambiarla":S.paint?"pulsa una pared para pintar solo esa":"arrastra para mover · pulsa otra vez para girar"}`}</span>`}
-      ${(S.human||S.dims)&&!es?`<div class="hu-leg"><span><i class="ok"></i>≥ 90 cm, se pasa bien</span><span><i class="mid"></i>70–90 cm, justo</span><span><i class="bad"></i>&lt; 70 cm, estrecho</span>${!v3&&S.human?"<span>Arrastra a la persona 👤 para probar un paso</span>":""}</div>`:""}
+      ${(S.human||S.dims)&&!es?`<div class="hu-leg"><span><i class="ok"></i>≥ 90 cm, se pasa bien</span><span><i class="mid"></i>70–90 cm, justo</span><span><i class="bad"></i>&lt; 70 cm, estrecho</span>${S.human?`<span>🔒 Muebles quietos · ${v3?"toca el suelo para llevar a la persona":"arrastra a la persona 👤 o toca el suelo"}</span>`:""}</div>`:""}
       ${bad.size&&!es?`<span class="warn">${bad.size} ${bad.size>1?"muebles no caben o se solapan":"mueble no cabe o se solapa"}</span>`:""}
     </div>${es?"":roomListsHTML(p,r)}</div>
     <div class="side">
@@ -2338,6 +2338,7 @@ function bindPlan(r){
       const mv=ev=>{ const p=toCm(ev); h.x=Math.round((h.x+p.x-p0.x)/5)*5; h.y=Math.round((h.y+p.y-p0.y)/5)*5; p0.x=p.x; p0.y=p.y; moved=true; $("humanLayer").innerHTML=humanSVG(r); };
       const up=()=>{ svg.removeEventListener("pointermove",mv); svg.removeEventListener("pointerup",up); if(!moved){ h.a=(h.a+Math.PI/2)%(Math.PI*2); } };
       svg.setPointerCapture(e.pointerId); svg.addEventListener("pointermove",mv); svg.addEventListener("pointerup",up); return; }
+    if(S.human){ e.preventDefault(); const p=toCm(e), h=humanPos(r); if(inPoly(p.x,p.y,pts(r))){ h.a=Math.atan2(p.x-h.x,p.y-h.y); h.x=Math.round(p.x/5)*5; h.y=Math.round(p.y/5)*5; $("humanLayer").innerHTML=humanSVG(r); } return; }
     const wp=S.paint&&e.target.closest("[data-wallpick]"); if(wp){ finRoom=r.id; S.finWall=+wp.dataset.wallpick; render(); return; }
     const g=e.target.closest(".it");
     if(!g){ if(S.sel){S.sel=null;render();} if(S.paint&&S.finWall!=="all"){ S.finWall="all"; render(); } return; }
@@ -2810,6 +2811,7 @@ function ensure3d(){
   const floorPt=e=>{V.ray.setFromCamera(ndc(e),V.camera);const p=new T.Vector3();return V.ray.ray.intersectPlane(V.floor,p)?p:null};
   el.addEventListener("pointerdown",e=>{
     V.down={x:e.clientX,y:e.clientY};
+    if(S.human) return;
     V.ray.setFromCamera(ndc(e),V.camera);
     const hits=V.ray.intersectObjects(V.group.children,true), hit=hits.find(h=>h.object.userData.itemId);
     if(!hit&&S.paint&&hits[0]&&hits[0].object.userData.wallIdx!=null){ finRoom=V.room?.id||finRoom; S.finWall=hits[0].object.userData.wallIdx; render(); return; }
@@ -2820,6 +2822,10 @@ function ensure3d(){
     S.preEdit={...it}; V.drag={it,ox:p.x-it.x,oz:p.z-it.y,x0:it.x,y0:it.y,riders:ridersOf(it),rest:Math.abs((+it.z||0)-supportHeight(it))<2,moved:false,wasSel:S.sel===it.id,wall:isWallItem(it)?wallGrab(it,V.room,e,ndc):null};
     el.setPointerCapture(e.pointerId);
   },{capture:true});
+  // modo persona: tocar el suelo lleva a la persona hasta ahí (los muebles no se tocan)
+  el.addEventListener("pointerup",e=>{ if(!S.human||!V.down||!V.room) return; if(Math.hypot(e.clientX-V.down.x,e.clientY-V.down.y)>6) return;
+    const p=floorPt(e); if(!p||!inPoly(p.x,p.z,pts(V.room))) return; const h=humanPos(V.room);
+    h.a=Math.atan2(p.x-h.x,p.z-h.y); h.x=Math.round(p.x/5)*5; h.y=Math.round(p.z/5)*5; render(); });
   el.addEventListener("pointermove",e=>{
     const d=V.drag; if(!d) return;
     if(d.wall){ if(wallMove(d,e,ndc)){ d.moved=true; if(V.objs[d.it.id]) place3d(V.objs[d.it.id],d.it); draw3d(); } return; }
@@ -5144,7 +5150,7 @@ document.addEventListener("click",e=>{
     case "myProjects": S.view="proyectos"; render(); window.scrollTo(0,0); break;
     case "account": openAccount(); break;
     case "dims": S.dims=!S.dims; render(); break;
-    case "human": S.human=!S.human; S.sel=null; S.paint=false; if(S.human) toast(S.vista==="3d"?"Vista a la altura de los ojos: arrastra para mirar alrededor. En 2D puedes mover a la persona.":"Arrastra a la persona por el plano. Púlsala para girarla."); render(); break;
+    case "human": S.human=!S.human; S.sel=null; S.paint=false; if(S.human) toast(S.vista==="3d"?"Toca el suelo para llevar a la persona y arrastra para mirar alrededor. Los muebles quedan quietos.":"Arrastra a la persona o toca el suelo donde quieras que vaya. Los muebles quedan quietos."); render(); break;
     case "budAdd": openBudAdd(); break;
     case "budNewProd": $("dlgBudAdd").close(); openProd(null,{}); setTimeout(()=>{ $("d_estado").value="elegido"; },0); break;
     case "lockItem": { const it=selItem(); if(it){ saveItem(it,{bloq:!it.bloq}); toast(it.bloq?"Desbloqueado: ya puedes moverlo":"Bloqueado: ya no se moverá sin querer"); } break; }
