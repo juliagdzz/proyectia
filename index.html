@@ -938,7 +938,7 @@ s.old{color:var(--muted);font-size:.6em;font-weight:500;margin-left:4px}
 
 <!-- Añadir productos al presupuesto -->
 <dialog id="dlgPlano" class="pl-dlg"><form method="dialog">
-  <div class="dlg-h"><h2>Importar un plano</h2><div class="dlg-hb"><button class="btn ghost sm" value="cancel">Cerrar</button></div></div>
+  <div class="dlg-h"><h2 id="plTitle">Importar un plano</h2><div class="dlg-hb"><button class="btn ghost sm" value="cancel">Cerrar</button></div></div>
   <div class="pl-b" id="planoBody"></div>
 </form></dialog>
 <dialog id="dlgRooms"><form method="dialog">
@@ -1789,7 +1789,9 @@ function shapePanel(r,P){
       ${(r.etiquetas||[]).length?`<ul class="fx-list">${r.etiquetas.map(l=>`<li><input type="text" value="${esc(l.t)}" data-labtxt="${esc(l.id)}" aria-label="Nombre" style="flex:1;min-width:0"><button class="icon-btn sm danger" type="button" data-labdel="${esc(l.id)}" aria-label="Quitar ${esc(l.t)}">✕</button></li>`).join("")}</ul>`:""}
       <div><button class="btn sm" type="button" data-act="labAdd">＋ Añadir un nombre</button></div>
     </section>
-    ${r.calco?`<section class="re-s"><h4>Plano de fondo</h4><div style="display:flex;gap:6px;flex-wrap:wrap">${r.calco.poly?`<button class="btn sm" type="button" data-act="calcoShape">Usar el contorno del plano</button>`:""}<button class="btn sm ghost" type="button" data-act="calcoOff">Quitar el plano de fondo</button></div></section>`:""}
+    ${r.calco||proyecto()?.plano?.img?`<section class="re-s"><h4>Plano de fondo</h4>
+      ${r.calco?.plano?`<p class="muted" style="margin:0;font-size:13px">Se ve siempre debajo mientras editas. ${S.calcoMove?"<b>Arrastra el plano</b> hasta que sus paredes coincidan con las de la estancia.":"Si no coincide con las paredes, muévelo."}</p>`:r.calco?"":`<p class="muted" style="margin:0;font-size:13px">Esta estancia no tiene el plano debajo. Ponlo y muévelo hasta que encaje.</p>`}
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${!r.calco?`<button class="btn sm primary" type="button" data-act="calcoAdd">🗺 Poner el plano de fondo</button>`:""}${r.calco?.plano?`<button class="btn sm${S.calcoMove?" primary":""}" type="button" data-act="calcoMove">${S.calcoMove?"✓ Ya está colocado":"✋ Mover el plano"}</button>`:""}${r.calco?.poly?`<button class="btn sm" type="button" data-act="calcoShape">Usar el contorno del plano</button>`:""}${r.calco?`<button class="btn sm ghost" type="button" data-act="calcoOff">Quitar el plano de fondo</button>`:""}</div></section>`:""}
     <button class="btn danger sm" type="button" data-act="delRoom" style="align-self:flex-start">Borrar esta estancia</button>
   </div>`;
 }
@@ -1959,6 +1961,11 @@ function bindShape(r){
   svg.addEventListener("pointerup",pEnd,true); svg.addEventListener("pointercancel",pEnd,true);
   if(S.drawMode){ bindDraw(r); return; }
   if(S.wallDraw){ bindWallDraw(r,svg,toCm,hs); return; }
+  if(S.calcoMove&&r.calco?.plano){ svg.style.cursor="move";
+    svg.addEventListener("pointerdown",e=>{ if(S.pinching) return; e.stopImmediatePropagation(); e.preventDefault(); const c0=toCm(e), x0=+r.calco.x||0, y0=+r.calco.y||0, img=document.querySelector("#calco image"); let nx=x0, ny=y0; try{ svg.setPointerCapture(e.pointerId); }catch{}
+      const mv=ev=>{ if(S.pinching) return; const c=toCm(ev); nx=Math.round(x0+c.x-c0.x); ny=Math.round(y0+c.y-c0.y); img?.setAttribute("transform",`translate(${nx} ${ny})`); };
+      const up=()=>{ svg.removeEventListener("pointermove",mv); svg.removeEventListener("pointerup",up); if(nx!==x0||ny!==y0){ const {id,...b}=r; save("estancias",id,{...b,calco:{...r.calco,x:nx,y:ny}}).catch(()=>{}); } };
+      svg.addEventListener("pointermove",mv); svg.addEventListener("pointerup",up); }); return; }
   // Puertas y ventanas: se arrastran por las paredes como un mueble; un toque abre su medida exacta
   svg.addEventListener("pointerdown",e=>{ const g=e.target.closest("#holeLayer [data-item]"); if(!g) return; const it0=S.items.find(x=>x.id===g.dataset.item); if(!it0) return;
     e.stopImmediatePropagation(); e.preventDefault(); const P=pts(r), sx=e.clientX, sy=e.clientY, box=document.querySelector(".canvas"); let moved=false, cur=null, tip=null, g2=g; try{ svg.setPointerCapture(e.pointerId); }catch{}
@@ -2014,7 +2021,7 @@ function bindShape(r){
 
 function planHTML(p,r){
   const rs=roomsOf(p.id);
-  const chips=`<div class="rooms">${rs.map(x=>`<button class="room-chip" type="button" data-room="${esc(x.id)}" aria-pressed="${r&&x.id===r.id}">${esc(x.nombre)} <small>${cm(x.ancho)}×${cm(x.largo)}</small></button>`).join("")}<button class="room-chip room-new" type="button" data-act="newRoom" title="Crear otra habitación">＋ Nueva estancia</button><button class="room-chip room-new" type="button" data-act="importPlano" title="Crear las estancias desde una foto del plano o un DXF">📷 Desde un plano</button>${rs.length?`<button class="room-chip room-gear" type="button" data-act="roomsManage" title="Cambiar el orden, el nombre o borrar estancias">⚙ Ordenar y borrar</button>`:""}
+  const chips=`<div class="rooms">${rs.map(x=>`<button class="room-chip" type="button" data-room="${esc(x.id)}" aria-pressed="${r&&x.id===r.id}">${esc(x.nombre)} <small>${cm(x.ancho)}×${cm(x.largo)}</small></button>`).join("")}<button class="room-chip room-new" type="button" data-act="newRoom" title="Crear otra habitación">＋ Nueva estancia</button><button class="room-chip room-new" type="button" data-act="importPlano" title="Crear las estancias desde una foto del plano o un DXF">📷 Desde un plano</button>${p.plano?.img?`<button class="room-chip room-new" type="button" data-act="verPlano" title="Ver el plano que subiste">🗺 Ver plano</button>`:""}${rs.length?`<button class="room-chip room-gear" type="button" data-act="roomsManage" title="Cambiar el orden, el nombre o borrar estancias">⚙ Ordenar y borrar</button>`:""}
     </div>`;
   if(!r) return `<div class="toolbar">${chips}</div><div class="blank"><h2>Dibuja tu primera estancia</h2><p>Solo necesitas el ancho y el largo en centímetros. Después arrastras muebles encima y ves si caben.</p><div class="pl-acts"><button class="btn primary" type="button" data-act="newRoom">Crear estancia</button><button class="btn" type="button" data-act="importPlano">📷 Importar el plano de la casa</button></div><p style="font-size:13px">Con una foto o captura del plano (la de la inmobiliaria vale) se crean todas las estancias con su forma y sus medidas.</p></div>`;
   const items=S.items.filter(i=>i.estanciaId===r.id);
@@ -2033,9 +2040,9 @@ function planHTML(p,r){
   <div class="planner">
     <div class="plan-main"><div class="canvas${es?" ed":""}">
       ${es&&!v3?`<div class="plan-tools"><button class="pt-btn" type="button" data-act="undo"${S.hist.length||(S.drawMode&&(S.drawPts||[]).length)||(S.wallDraw?.pts.length)?"":" disabled"} title="Deshacer (Ctrl+Z)"><span aria-hidden="true">↶</span> Deshacer</button><button class="pt-btn" type="button" data-zoom="1.6" title="Acercar">＋</button><button class="pt-btn" type="button" data-zoom="0.625" title="Alejar"${Z<=1?" disabled":""}>－</button>${Z>1?`<button class="pt-btn" type="button" data-zoom="0" title="Ver la estancia entera">⤢ Ver todo</button>`:""}<span class="pt-note">Rueda del ratón o pellizca para acercar · arrastra el fondo para moverte</span></div>`:""}
-      ${es?"":`<div class="plan-tools"><button class="pt-btn" type="button" data-act="undo"${S.hist.length?"":" disabled"} title="Deshacer el último cambio (Ctrl+Z)"><span aria-hidden="true">↶</span> Deshacer</button><button class="pt-btn${S.human?" on":""}" type="button" data-act="human" title="Ver si cabes: distancias para pasar y vista a la altura de los ojos"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2.5"/><path d="M12 8v7M8 10.5l4-1.5 4 1.5M9.5 22l2.5-7 2.5 7"/></svg><span>Persona</span></button><button class="pt-btn${S.dims?" on":""}" type="button" data-act="dims" title="Mostrar las medidas: espacio libre entre muebles y paredes"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17 17 3l4 4L7 21z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/></svg><span>Medidas</span></button>${S.human&&v3?`<div class="seg pt-seg" role="group" aria-label="Cómo te ves"><button type="button" data-hview="1" aria-pressed="${S.hview==="1"}">👁 1ª persona</button><button type="button" data-hview="3" aria-pressed="${S.hview!=="1"}">🧍‍♀️ 3ª persona</button></div>`:""}${(()=>{ const n=items.filter(i=>i.bloq).length; return n>1?`<button class="pt-btn" type="button" data-act="unlockAll" title="Desbloquear todos los muebles bloqueados de esta estancia">${UNLOCK_SVG}<span>Desbloquear (${n})</span></button>`:""; })()}</div>`}
+      ${es?"":`<div class="plan-tools"><button class="pt-btn" type="button" data-act="undo"${S.hist.length?"":" disabled"} title="Deshacer el último cambio (Ctrl+Z)"><span aria-hidden="true">↶</span> Deshacer</button><button class="pt-btn${S.human?" on":""}" type="button" data-act="human" title="Ver si cabes: distancias para pasar y vista a la altura de los ojos"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2.5"/><path d="M12 8v7M8 10.5l4-1.5 4 1.5M9.5 22l2.5-7 2.5 7"/></svg><span>Persona</span></button><button class="pt-btn${S.dims?" on":""}" type="button" data-act="dims" title="Mostrar las medidas: espacio libre entre muebles y paredes"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17 17 3l4 4L7 21z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/></svg><span>Medidas</span></button>${r.calco?.plano?`<button class="pt-btn${S.showPlano?" on":""}" type="button" data-act="togglePlano" title="Ver el plano de fondo debajo de los muebles">🗺 <span>Plano</span></button>`:""}${S.human&&v3?`<div class="seg pt-seg" role="group" aria-label="Cómo te ves"><button type="button" data-hview="1" aria-pressed="${S.hview==="1"}">👁 1ª persona</button><button type="button" data-hview="3" aria-pressed="${S.hview!=="1"}">🧍‍♀️ 3ª persona</button></div>`:""}${(()=>{ const n=items.filter(i=>i.bloq).length; return n>1?`<button class="pt-btn" type="button" data-act="unlockAll" title="Desbloquear todos los muebles bloqueados de esta estancia">${UNLOCK_SVG}<span>Desbloquear (${n})</span></button>`:""; })()}</div>`}
       ${v3?`<div id="view3d"></div><span class="hint">Arrastra el fondo para girar la vista · pellizca o usa la rueda para acercar · arrastra un mueble para moverlo</span>`:`<svg id="plan" data-pad="${pad}" data-hs="${hs}" data-d="${DR}" viewBox="${VB.join(" ")}" data-z="${Z}" role="img" aria-label="Plano de ${esc(r.nombre)}">
-        <g id="roomGeom">${S.drawMode&&es?drawBgSVG(DR):roomGeomSVG(P,pad,r.sueloColor||DEF_FIN.sueloColor,{r,edit:es,paint:S.paint&&!es,z:Z})}</g>${es&&S.drawMode&&r.calco?.plano&&planoGuide(r)?.url?`<g id="guide" pointer-events="none"${S.drawOff?` transform="translate(${S.drawOff.x} ${S.drawOff.y})"`:""}><image href="${planoGuide(r).url}" x="${+r.calco.x||0}" y="${+r.calco.y||0}" width="${r.calco.w}" height="${r.calco.l}" preserveAspectRatio="none"/></g>`:""}${(r.etiquetas||[]).length&&!(es&&S.drawMode)?`<g id="labLayer">${labelsSVG(r,es,W,L)}</g>`:""}${r.calco&&(!r.calco.plano||es)?`<g id="calco" opacity="${r.calco.plano?.5:.55}" pointer-events="none"${r.calco.plano?' style="mix-blend-mode:multiply"':""}${es&&S.drawMode&&S.drawOff?` transform="translate(${S.drawOff.x} ${S.drawOff.y})"`:""}>${calcoSVG(r.calco,r)}</g>`:""}
+        <g id="roomGeom">${S.drawMode&&es?drawBgSVG(DR):roomGeomSVG(P,pad,r.sueloColor||DEF_FIN.sueloColor,{r,edit:es,paint:S.paint&&!es,z:Z})}</g>${es&&S.drawMode&&r.calco?.plano&&planoGuide(r)?.url?`<g id="guide" pointer-events="none"${S.drawOff?` transform="translate(${S.drawOff.x} ${S.drawOff.y})"`:""}><image href="${planoGuide(r).url}" x="${+r.calco.x||0}" y="${+r.calco.y||0}" width="${r.calco.w}" height="${r.calco.l}" preserveAspectRatio="none"/></g>`:""}${(r.etiquetas||[]).length&&!(es&&S.drawMode)?`<g id="labLayer">${labelsSVG(r,es,W,L)}</g>`:""}${r.calco&&(!r.calco.plano||es||S.showPlano)?`<g id="calco" opacity="${r.calco.plano?(S.calcoMove?.75:.5):.55}" pointer-events="none"${r.calco.plano?' style="mix-blend-mode:multiply"':""}${es&&S.drawMode&&S.drawOff?` transform="translate(${S.drawOff.x} ${S.drawOff.y})"`:""}>${calcoSVG(r.calco,r)}</g>`:""}
         <g id="itemsLayer"${es?' class="es-dim" style="pointer-events:none"':""}${es&&S.drawMode&&S.drawOff?` transform="translate(${S.drawOff.x} ${S.drawOff.y})"`:""}>${[...items].filter(i=>!(es&&!S.drawMode&&isHueco(i))).sort((a,b)=>(a.tipo==="alfombra"||/alfombra/i.test(a.nombre)?-1:0)-(b.tipo==="alfombra"||/alfombra/i.test(b.nombre)?-1:0)).map(i=>itemSVG(i,bad.has(i.id))).join("")}</g>
         ${(S.human||S.dims)&&!es?`<g id="humanLayer">${humanSVG(r,items)}</g>`:""}
         ${es&&S.drawMode?`<g id="drawLayer">${drawLayerSVG(DR,hs)}</g>`:es?`<g id="shapeLayer"${S.wallDraw?' pointer-events="none" opacity=".35"':""}>${shapeHandlesSVG(P,hs)}</g><g id="holeLayer"${S.wallDraw?' pointer-events="none"':""}>${items.filter(isHueco).map(i=>holeSVG(i,hs)).join("")}</g>${S.wallDraw?`<g id="wallDrawLayer"><rect x="${VB[0]}" y="${VB[1]}" width="${VB[2]}" height="${VB[3]}" fill="transparent" style="cursor:crosshair"/><g id="wdPrev">${wallDrawSVG(P,hs)}</g></g>`:""}`:""}
@@ -3746,7 +3753,13 @@ function guideSnap(G,c,x,y,R){
   if(u>=0&&u<G.w){ let best=null; for(let d=0;d<=rp&&best==null;d++) for(const s of d?[-1,1]:[1]){ const b=v+s*d; if(b<=0||b>=G.h) continue; if(at(u,b-1)!==at(u,b)){ best=b; break; } } if(best!=null) out.y=Math.round(best*G.kw+(+c.y||0)); }
   return out;
 }
-function planoOpen(){ for(const k in PL) delete PL[k]; PL.step="pick"; planoRender(); $("dlgPlano").showModal(); }
+function planoOpen(){ for(const k in PL) delete PL[k]; PL.step="pick"; $("plTitle").textContent="Importar un plano"; planoRender(); $("dlgPlano").showModal(); }
+// Ver el plano que subiste, con zoom
+function verPlano(){
+  const pl=proyecto()?.plano; if(!pl?.img){ toast("Este proyecto no tiene un plano subido."); return; }
+  const im=new Image(); im.onload=()=>{ for(const k in PL) delete PL[k]; Object.assign(PL,{img:pl.img,w:im.naturalWidth,h:im.naturalHeight,step:"view",z:1,cx:im.naturalWidth/2,cy:im.naturalHeight/2});
+    $("plTitle").textContent="Plano de la casa"; planoRender(); $("dlgPlano").showModal(); }; im.src=pl.img;
+}
 function imgToJpeg(img,max,q){
   const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height, k=Math.min(1,max/Math.max(iw,ih)), c=document.createElement("canvas");
   c.width=Math.max(1,Math.round(iw*k)); c.height=Math.max(1,Math.round(ih*k));
@@ -4186,6 +4199,7 @@ function planoRender0(){
   const B=$("planoBody"); if(!B) return; const err=PL.err?`<div class="pl-err">${esc(PL.err)}</div>`:"";
   const m2=v=>v.toLocaleString("es-ES",{maximumFractionDigits:2});
   const p=proyecto(), dest=`<div class="pl-acts"><label for="pl_dest" style="font-weight:600">Dónde</label>${p?`<select id="pl_dest"><option value="cur">En «${esc(p.nombre)}»</option><option value="new">En un proyecto nuevo</option></select>`:`<input id="pl_pname" type="text" placeholder="Nombre del proyecto, p. ej. Mi casa">`}</div>`;
+  if(PL.step==="view"){ B.innerHTML=`${planoSVG("")}<div class="pl-acts"><button class="btn" type="button" data-pl="newImport">📷 Subir otro plano</button></div>`; return; }
   if(PL.step==="pick"){ B.innerHTML=`${err}<p>Sube una foto o una captura del plano de tu casa (la de la inmobiliaria o la del proyecto vale) y se crean las estancias con su forma y sus medidas. También puedes subir un archivo DXF de AutoCAD.</p>
     <label class="pl-drop"><input type="file" id="pl_file" accept="image/*,.dxf,.dwg"><span style="font-size:30px" aria-hidden="true">📷</span>Elegir imagen o DXF<small>JPG, PNG, captura del móvil o .dxf</small></label>
     <p class="muted" style="font-size:13px">Para que salga bien: que se lea la barra de escala o alguna cota, y mejor si sale la tabla de superficies en m².</p>`; return; }
@@ -4245,6 +4259,7 @@ $("planoBody").addEventListener("click",e=>{
     if(a==="read"){ PL.free=false; planoRead(); } else if(a==="detect") planoDetect(); else if(a==="create") planoCreate(); else if(a==="trace") planoTrace();
     else if(a==="cal"){ PL.step="cal"; PL.cal=[]; PL.err=""; planoRender(); }
     else if(a==="calReset"){ PL.cal=[]; planoRender(); }
+    else if(a==="newImport"){ planoOpen(); }
     else if(a==="rdUndo"){ PL.rd?.pts.pop(); planoRender(); }
     else if(a==="rdClose"){ if(PL.rd&&PL.rd.pts.length>=3){ PL.rd.closed=true; planoRender(); } }
     else if(a==="rdOpen"){ if(PL.rd){ PL.rd.closed=false; planoRender(); } }
@@ -4919,7 +4934,7 @@ document.addEventListener("click",e=>{
     case "newProd": S.addFromPlan=null; openProd(null,{estanciaId:""}); break;
     case "newTask": openTask(null); break;
     case "editShape": S.editShape=true; S.paint=false; S.vista="2d"; S.sel=null; S.shapeSel=null; S.fixForm=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
-    case "shapeDone": S.wallDraw=null; S.zoom=1; S.zoomC=null; S.editShape=false; S.drawMode=false; S.drawPts=null; S.shapeSel=null; S.fixForm=null; S.holeForm=null; if(d.then==="doors") S.openCats.add("Puertas, ventanas y escaleras"); render(); if(d.then==="doors") setTimeout(()=>document.querySelector('.cat-d[data-cat="Puertas, ventanas y escaleras"]')?.scrollIntoView({behavior:"smooth",block:"center"}),60); break;
+    case "shapeDone": S.wallDraw=null; S.calcoMove=false; S.zoom=1; S.zoomC=null; S.editShape=false; S.drawMode=false; S.drawPts=null; S.shapeSel=null; S.fixForm=null; S.holeForm=null; if(d.then==="doors") S.openCats.add("Puertas, ventanas y escaleras"); render(); if(d.then==="doors") setTimeout(()=>document.querySelector('.cat-d[data-cat="Puertas, ventanas y escaleras"]')?.scrollIntoView({behavior:"smooth",block:"center"}),60); break;
     case "fxSave": fxSave(r); break;
     case "extendFrom": { const k=S.shapeSel?.t==="v"?S.shapeSel.i:null; if(k==null) break;
       const P0=pts(r), {ox,oy}=drawFrame(r,2,600), Q=P0.map(([x,y])=>[x+ox,y+oy]);
@@ -4954,6 +4969,10 @@ document.addEventListener("click",e=>{
     case "newMed": openMed(null); break;
     case "dxf": $("dxfIn").value=""; $("dxfIn").click(); break;
     case "importPlano": planoOpen(); break;
+    case "verPlano": verPlano(); break;
+    case "togglePlano": S.showPlano=!S.showPlano; lsSet("proletix:verPlano",S.showPlano); render(); break;
+    case "calcoAdd": if(r&&p?.plano){ const {W,L}=bbox(pts(r)), {id,...b}=r; save("estancias",id,{...b,calco:{plano:1,x:Math.round((W-p.plano.w)/2),y:Math.round((L-p.plano.l)/2),w:p.plano.w,l:p.plano.l}}).then(()=>{ S.calcoMove=true; render(); toast("Arrastra el plano hasta que encaje con las paredes."); }).catch(()=>{}); } break;
+    case "calcoMove": S.calcoMove=!S.calcoMove; render(); break;
     case "diagToggle": S.diag=!S.diag; render(); toast(S.diag?"Diagonales activadas: las paredes van justo donde pinches.":"Paredes rectas otra vez."); break;
     case "catCloseAll": S.openCats.clear(); S.catQ=""; render(); break;
     case "rlCloseAll": S.openLists.clear(); render(); break;
@@ -5055,7 +5074,7 @@ document.addEventListener("keydown",e=>{
   }
 });
 
-S.tab=lsGet("proletix:tab","plano"); if(S.tab==="compras") S.tab="productos"; if(!["plano","productos","medidas","conjuntos","presupuesto","reforma","contactos"].includes(S.tab)) S.tab="plano"; S.vista=lsGet("proletix:vista","3d");
+S.showPlano=!!lsGet("proletix:verPlano",false); S.tab=lsGet("proletix:tab","plano"); if(S.tab==="compras") S.tab="productos"; if(!["plano","productos","medidas","conjuntos","presupuesto","reforma","contactos"].includes(S.tab)) S.tab="plano"; S.vista=lsGet("proletix:vista","3d");
 boot();
 </script>
 
