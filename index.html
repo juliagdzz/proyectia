@@ -347,6 +347,7 @@ table.budget .ok{color:var(--ok);font-weight:600}
 .btn.rl-bud.on,.btn.rl-bud[aria-pressed="true"]{background:#E3F3E9;color:var(--ok);border-color:var(--ok);font-weight:700}
 .rl-bud .sh{display:none}
 @media (max-width:560px){ .rl-bud .lg{display:none} .rl-bud .sh{display:inline} .rl-acts{flex-direction:column;align-items:stretch} .rl-bud{padding:6px 9px} }
+.diag-btn.on{background:var(--blue-soft);border-color:var(--blue);color:var(--blue-ink)}
 .cat-h{display:flex;justify-content:space-between;align-items:center;gap:8px;position:sticky;top:0;z-index:3;background:inherit;padding:6px 0;margin-top:-6px}
 .cat-h h3{margin:0}
 .rl-h .rl-close{margin-left:auto}
@@ -1079,6 +1080,10 @@ function record(col,id,prev,next){
 // Agrupa todo lo que se guarda durante fn en un solo paso de «Atrás»
 async function held(fn){ S.histGroup=null; S.histHeld=(S.histHeld||0)+1; try{ return await fn(); } finally{ S.histHeld--; } }
 function holdHist(ms=1500){ S.histGroup=null; S.histHoldUntil=Date.now()+ms; }
+// Paredes en diagonal: con el botón «Diagonales» o manteniendo Mayús no se enderezan
+let SHIFT=false; document.addEventListener("keydown",e=>{ if(e.key==="Shift") SHIFT=true; }); document.addEventListener("keyup",e=>{ if(e.key==="Shift") SHIFT=false; }); window.addEventListener("blur",()=>{ SHIFT=false; });
+const freeAngle=()=>!!S.diag||SHIFT;
+const diagBtn=(attr)=>`<button class="btn sm diag-btn${S.diag?" on":""}" type="button" ${attr} aria-pressed="${!!S.diag}" title="Permite paredes inclinadas (o mantén pulsada la tecla Mayús)">◢ Diagonales${S.diag?" ✓":""}</button>`;
 // Deshacer: si estás dibujando quita el último punto; si no, el último cambio guardado
 function undoCtx(){
   if(S.editShape&&S.wallDraw){ if(S.wallDraw.pts.length) S.wallDraw.pts.pop(); else S.wallDraw=null; render(); return; }
@@ -1675,7 +1680,7 @@ function bindDraw(r){
   const snap=e=>{ const c=toCm(e), P=S.drawPts||[], st=gridStep(10); let x=Math.round(c.x/st)*st, y=Math.round(c.y/st)*st;
     if(G?.M){ const f=guideSnap(G,r.calco,c.x-o.x,c.y-o.y,hs*2.6); if(f.x!=null) x=f.x+o.x; if(f.y!=null) y=f.y+o.y; }
     x=Math.max(0,Math.min(D,x)); y=Math.max(0,Math.min(D,y));
-    if(P.length){ const l=P[P.length-1], dx=Math.abs(x-l[0]), dy=Math.abs(y-l[1]); if(dx<dy*.35) x=l[0]; else if(dy<dx*.35) y=l[1];
+    if(P.length){ const l=P[P.length-1], dx=Math.abs(x-l[0]), dy=Math.abs(y-l[1]); if(!freeAngle()){ if(dx<dy*.35) x=l[0]; else if(dy<dx*.35) y=l[1]; }
       const f=P[0]; if(P.length>=3&&Math.hypot(x-f[0],y-f[1])<hs*1.5) return [...f];
       if(Math.abs(x-f[0])<hs*.7) x=f[0]; if(Math.abs(y-f[1])<hs*.7) y=f[1]; }
     for(const q of S.drawRef||[]){ if(Math.hypot(x-q[0],y-q[1])<hs*1.3) return [...q]; }
@@ -1735,15 +1740,15 @@ function shapePanel(r,P){
   const estName=e=>({viga:"Viga",pilar:"Columna",tabique:"Tabique"})[e.tipo]||"Elemento";
   if(S.wallDraw){ const n=S.wallDraw.pts.length;
     return `<div class="panel room-ed"><div class="ph"><h3>Dibujar pared</h3></div>
-    <ol class="sh-steps"><li>Pincha en una <b>pared o esquina</b> para empezar (también vale en medio de la estancia para un tabique suelto).</li><li>Pincha donde la pared <b>gira</b>. Las paredes salen rectas y ves lo que mide cada tramo.</li><li>Termina pinchando <b>otra pared</b>: si has ido por fuera, la estancia crece; si has ido por dentro, se crea un tabique.</li></ol>
+    <ol class="sh-steps"><li>Pincha en una <b>pared o esquina</b> para empezar (también vale en medio de la estancia para un tabique suelto).</li><li>Pincha donde la pared <b>gira</b>. Las paredes salen rectas (para una inclinada activa «◢ Diagonales» o mantén Mayús) y ves lo que mide cada tramo.</li><li>Termina pinchando <b>otra pared</b>: si has ido por fuera, la estancia crece; si has ido por dentro, se crea un tabique.</li></ol>
     <p class="muted" style="margin:0;font-size:12px">Acerca con los dedos, la rueda o Ctrl + para afinar.</p>
-    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" type="button" data-act="wdUndo"${n?"":" disabled"}>↶ Quitar el último punto</button><button class="btn sm primary" type="button" data-act="wdDone"${n>=2?"":" disabled"}>Terminar aquí (tabique)</button><button class="btn ghost sm" type="button" data-act="wdCancel">Cancelar</button></div></div>`; }
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${diagBtn('data-act="diagToggle"')}<button class="btn sm" type="button" data-act="wdUndo"${n?"":" disabled"}>↶ Quitar el último punto</button><button class="btn sm primary" type="button" data-act="wdDone"${n>=2?"":" disabled"}>Terminar aquí (tabique)</button><button class="btn ghost sm" type="button" data-act="wdCancel">Cancelar</button></div></div>`; }
   if(S.drawMode){ const n=(S.drawPts||[]).length, sel=S.drawSel!=null;
     return `<div class="panel room-ed"><div class="ph"><h3>${S.drawNew?"Otra habitación al lado":"Dibujar la forma"}</h3></div>
     <ol class="sh-steps">${S.drawNew?`<li>La habitación actual sale en gris. Pincha donde va <b>cada esquina</b> de la nueva: se pegan solas a las esquinas de la otra.</li>`:`${S.drawExt?`<li>Partes de la esquina <b style="color:var(--red)">roja</b>. Pincha hacia donde quieres llevar la pared nueva, luego donde gira, y así hasta volver.</li><li>Para cerrar, pincha el <b style="color:var(--ok)">punto verde</b>: la pared vieja entre el rojo y el verde se sustituye por las nuevas.</li>`:(S.drawPts||[]).length?`<li>Sigues desde tu forma: pincha en el plano para <b>añadir esquinas</b> después del punto <b style="color:var(--red)">rojo</b> (el último).</li>`:`<li>Pincha donde va <b>cada esquina</b> de la estancia${r.calco?.plano?", encima de las paredes del plano de fondo":""}. ${r.calco?.plano?" Las paredes del plano salen en <b style=\"color:var(--blue-ink)\">azul</b> y los puntos se pegan a ellas. Acércate con los dedos, la rueda o Ctrl + para afinar.":" Los puntos se pegan a una cuadrícula de 10 cm y luego ajustas cada medida pulsándola."}</li>`}`}
       <li><b>Pincha cualquier punto</b> para borrarlo o para seguir dibujando desde él.</li>${S.drawExt?"":`<li>Para terminar, pincha el <b style="color:var(--ok)">punto verde</b> o pulsa «Cerrar la forma».</li>`}</ol>
     ${sel?`<div class="fx-form"><h4>Punto seleccionado</h4><div class="full" style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm danger" type="button" data-act="drawDelPt">🗑 Borrar este punto</button><button class="btn sm primary" type="button" data-act="drawFrom">➜ Seguir desde aquí</button><button class="btn ghost sm" type="button" data-act="drawSelNone">Cancelar</button></div></div>`:""}
-    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary sm" type="button" id="drawClose" data-act="drawClose"${n<3?" disabled":""}>Cerrar la forma</button><button class="btn sm" type="button" id="drawUndo" data-act="drawUndo"${n?"":" disabled"}>↶ Quitar el último punto</button><button class="btn sm danger" type="button" id="drawClear" data-act="drawClear"${n?"":" disabled"}>🗑 Borrar y empezar de cero</button><button class="btn ghost sm" type="button" data-act="drawCancel">Cancelar</button></div></div>`; }
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${diagBtn('data-act="diagToggle"')}<button class="btn primary sm" type="button" id="drawClose" data-act="drawClose"${n<3?" disabled":""}>Cerrar la forma</button><button class="btn sm" type="button" id="drawUndo" data-act="drawUndo"${n?"":" disabled"}>↶ Quitar el último punto</button><button class="btn sm danger" type="button" id="drawClear" data-act="drawClear"${n?"":" disabled"}>🗑 Borrar y empezar de cero</button><button class="btn ghost sm" type="button" data-act="drawCancel">Cancelar</button></div></div>`; }
   let form="";
   if(f){
     const el=f.eid!=null&&est.find(x=>String(x.id)===String(f.eid)), t=f.tipo, horiz=f.dir?f.dir==="h":true, v=k=>f[k]??"";
@@ -3994,7 +3999,7 @@ function wdSnap(r,P,c,hs){
   // alineado con las esquinas que ya hay
   let ax=null, ay=null; for(const v of P){ if(Math.abs(c.x-v[0])<hs*.7&&(ax==null||Math.abs(c.x-v[0])<Math.abs(c.x-ax))) ax=v[0]; if(Math.abs(c.y-v[1])<hs*.7&&(ay==null||Math.abs(c.y-v[1])<Math.abs(c.y-ay))) ay=v[1]; }
   if(ax!=null) x=ax; if(ay!=null) y=ay;
-  if(prev){ const dx=Math.abs(c.x-prev.x), dy=Math.abs(c.y-prev.y); if(dx<dy*.4){ x=prev.x; lock="v"; } else if(dy<dx*.4){ y=prev.y; lock="h"; } }
+  if(prev&&!freeAngle()){ const dx=Math.abs(c.x-prev.x), dy=Math.abs(c.y-prev.y); if(dx<dy*.4){ x=prev.x; lock="v"; } else if(dy<dx*.4){ y=prev.y; lock="h"; } }
   // ¿cae sobre una pared?
   let best=null;
   P.forEach((p,i)=>{ const q=P[(i+1)%P.length], dx=q[0]-p[0], dy=q[1]-p[1], L2=dx*dx+dy*dy; if(L2<1) return;
@@ -4086,13 +4091,13 @@ function dpClosed(P,eps){
 function rdSnap(svg,q){
   const P=PL.rd.pts, R=16/svg.getScreenCTM().a, prev=P[P.length-1], f0=P[0]; let x=q.x, y=q.y;
   const C=PL.ctx; if(C){ const f=guideSnap({M:C.M,w:C.w,h:C.h,kw:1/C.s},{x:0,y:0,w:PL.w,l:PL.h},x,y,R); if(f.x!=null) x=f.x; if(f.y!=null) y=f.y; }
-  if(prev){ const dx=Math.abs(x-prev[0]), dy=Math.abs(y-prev[1]); if(dx<dy*.35) x=prev[0]; else if(dy<dx*.35) y=prev[1]; }
+  if(prev&&!freeAngle()){ const dx=Math.abs(x-prev[0]), dy=Math.abs(y-prev[1]); if(dx<dy*.35) x=prev[0]; else if(dy<dx*.35) y=prev[1]; }
   if(f0&&P.length>=2){ if(Math.abs(x-f0[0])<R*.6) x=f0[0]; if(Math.abs(y-f0[1])<R*.6) y=f0[1]; }
   return [Math.round(x*10)/10,Math.round(y*10)/10];
 }
 function rdFinish(){
   const P=PL.rd?.pts||[]; if(P.length<3){ toast("Pon al menos tres esquinas."); return; }
-  const e=PL.rooms.find(x=>x.i===PL.rd.i); if(e){ const [n]=roomsToCm([{nombre:e.nombre,m2:e.m2,P:orthoPoly(P)}]); Object.assign(e,{P:n.P,Q:n.Q,mx:n.mx,my:n.my,area:n.area,dudosa:false}); PL.off?.delete(e.i); }
+  const e=PL.rooms.find(x=>x.i===PL.rd.i); if(e){ const [n]=roomsToCm([{nombre:e.nombre,m2:e.m2,P:S.diag?P.map(p=>[...p]):orthoPoly(P)}]); Object.assign(e,{P:n.P,Q:n.Q,mx:n.mx,my:n.my,area:n.area,dudosa:false}); PL.off?.delete(e.i); }
   PL.rd=null; PL.step="result"; planoRender(); toast("Estancia redibujada. Revisa las demás y pulsa «Crear las estancias».");
 }
 function planoScale(){
@@ -4198,9 +4203,9 @@ function planoRender0(){
     const old=e?`<polygon points="${e.P.map(q=>q.join(",")).join(" ")}" fill="#9CA3AF" fill-opacity=".15" stroke="#6B7280" stroke-width="2" stroke-dasharray="6 5" vector-effect="non-scaling-stroke"/>`:"";
     const line=pts.length>1?`<polyline points="${pts.map(q=>q.join(",")).join(" ")}" fill="none" stroke="#6D0101" stroke-width="3" vector-effect="non-scaling-stroke"/>`:"";
     const dots=pts.map((q,j)=>`<circle cx="${q[0]}" cy="${q[1]}" data-r="${j?sw*1.6:sw*2.4}" r="${(j?sw*1.6:sw*2.4)/z}" fill="${j?"#6D0101":"#2F855A"}" stroke="#fff" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`).join("");
-    B.innerHTML=`${err}<p><b>Dibuja «${esc(PL.rd.name||e?.nombre||"la estancia")}»:</b> toca cada esquina por dentro de sus paredes; los puntos se pegan a las paredes del plano y salen rectos. Para cerrarla, toca el punto <b style="color:#2F855A">verde</b> o pulsa «Listo». Acércate con los dedos, la rueda o Ctrl + para afinar.</p>
+    B.innerHTML=`${err}<p><b>Dibuja «${esc(PL.rd.name||e?.nombre||"la estancia")}»:</b> toca cada esquina por dentro de sus paredes; los puntos se pegan a las paredes del plano y salen rectos (para una pared inclinada activa «◢ Diagonales» o mantén Mayús). Para cerrarla, toca el punto <b style="color:#2F855A">verde</b> o pulsa «Listo». Acércate con los dedos, la rueda o Ctrl + para afinar.</p>
       ${planoSVG(old+`<g id="pl_rdl">${line}</g>`+dots,"cal")}
-      <div class="pl-acts"><button class="btn primary" type="button" data-pl="rdDone"${pts.length<3?" disabled":""}>Listo</button><button class="btn" type="button" data-pl="rdUndo"${pts.length?"":" disabled"}>↶ Quitar el último punto</button><button class="btn ghost sm" type="button" data-pl="rdCancel">Cancelar</button></div>`; return; }
+      <div class="pl-acts"><button class="btn primary" type="button" data-pl="rdDone"${pts.length<3?" disabled":""}>Listo</button>${diagBtn('data-pl="diag"')}<button class="btn" type="button" data-pl="rdUndo"${pts.length?"":" disabled"}>↶ Quitar el último punto</button><button class="btn ghost sm" type="button" data-pl="rdCancel">Cancelar</button></div>`; return; }
   if(PL.step==="cal"){
     const [a,b]=PL.cal||[];
     B.innerHTML=`${err}<p><b>1 ·</b> Pincha los dos extremos de algo cuya medida sepas: la barra de escala (por ejemplo de 0 a 5 m) o una cota del plano. Acércate para hacerlo exacto; si un punto no ha quedado bien, arrástralo.</p>
@@ -4228,6 +4233,7 @@ $("planoBody").addEventListener("click",e=>{
     else if(a==="rdUndo"){ PL.rd?.pts.pop(); planoRender(); }
     else if(a==="rdCancel"){ PL.rd=null; PL.step="result"; planoRender(); }
     else if(a==="rdDone") rdFinish();
+    else if(a==="diag"){ S.diag=!S.diag; planoRender(); }
     else if(a==="back"){ PL.step=PL.rooms?"result":"img"; planoRender(); }
     else if(a==="again"){ for(const k in PL) delete PL[k]; PL.step="pick"; planoRender(); }
     return; }
@@ -4286,9 +4292,16 @@ function roomsDlg(){
     return `<li data-rid="${esc(r.id)}"${r.id===S.roomId?' class="cur"':""}><span class="rm-ord"><button type="button" data-rmv="-1" aria-label="Subir ${esc(r.nombre)}"${i?"":" disabled"}>↑</button><button type="button" data-rmv="1" aria-label="Bajar ${esc(r.nombre)}"${i<rs.length-1?"":" disabled"}>↓</button></span>
       <input type="text" value="${esc(r.nombre)}" data-rmname aria-label="Nombre de la estancia">
       <span class="rm-btns"><button class="btn sm" type="button" data-rmedit>Abrir</button><button class="btn danger sm" type="button" data-rmdel>Borrar</button></span>
-      <small>${cm(r.ancho)}×${cm(r.largo)} cm · ${n} ${n===1?"cosa":"cosas"} dentro</small></li>`; }).join("")}</ul>`:`<p class="muted">Aún no hay estancias.</p>`;
+      <small>${cm(r.ancho)}×${cm(r.largo)} cm · ${n} ${n===1?"cosa":"cosas"} dentro</small></li>`; }).join("")}</ul>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn danger sm" type="button" data-rmall>🗑 Borrar todas las estancias (${rs.length})</button></div>`:`<p class="muted">Aún no hay estancias.</p>`;
 }
 $("roomsBody").addEventListener("click",async e=>{
+  const all=e.target.closest("[data-rmall]");
+  if(all){ const p=proyecto(), rs=p?roomsOf(p.id):[]; if(!rs.length) return;
+    if(!all.classList.contains("armed")){ all.classList.add("armed"); all.textContent=`¿Seguro? Pulsa otra vez para borrar las ${rs.length}`; clearTimeout(all._t); all._t=setTimeout(()=>roomsDlg(),4000); return; }
+    const ids=new Set(rs.map(r=>r.id));
+    await held(async()=>{ for(const it of S.items.filter(x=>ids.has(x.estanciaId))) await remove("items",it.id); for(const r of rs) await remove("estancias",r.id); });
+    S.roomId=null; S.editShape=false; S.drawMode=false; S.wallDraw=null; render(); roomsDlg(); toast(`${rs.length} estancias borradas`,undo); return; }
   const li=e.target.closest("[data-rid]"); if(!li) return; const p=proyecto(), rs=p?roomsOf(p.id):[], i=rs.findIndex(r=>r.id===li.dataset.rid), r=rs[i]; if(!r) return;
   const mv=e.target.closest("[data-rmv]");
   if(mv){ const j=i+(+mv.dataset.rmv); if(j<0||j>=rs.length) return; const arr=[...rs]; [arr[i],arr[j]]=[arr[j],arr[i]];
@@ -4922,6 +4935,7 @@ document.addEventListener("click",e=>{
     case "newMed": openMed(null); break;
     case "dxf": $("dxfIn").value=""; $("dxfIn").click(); break;
     case "importPlano": planoOpen(); break;
+    case "diagToggle": S.diag=!S.diag; render(); toast(S.diag?"Diagonales activadas: las paredes van justo donde pinches.":"Paredes rectas otra vez."); break;
     case "catCloseAll": S.openCats.clear(); S.catQ=""; render(); break;
     case "rlCloseAll": S.openLists.clear(); render(); break;
     case "wallDraw": S.wallDraw={pts:[]}; S.shapeSel=null; S.fixForm=null; S.holeForm=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
