@@ -614,6 +614,7 @@ s.old{color:var(--muted);font-size:.6em;font-weight:500;margin-left:4px}
 .pl-seg{display:flex;width:100%}
 .pl-seg button{flex:1;padding:8px 6px}
 .pl-wt{gap:6px}
+.pl-ur{display:inline-flex;gap:4px}
 .pl-tol{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600}
 .pl-tol input{width:120px}
 .pl-hint{margin:0;font-size:12px;color:var(--muted)}
@@ -3811,6 +3812,17 @@ async function planoRead(){
   PL.off=new Set(); PL.rooms=rooms; PL.step="result"; planoRender();
 }
 const plName=e=>(PL.free&&PL.labs?.find(l=>l.room===e.i)?.t)||e.nombre;
+// Deshacer y rehacer en la ventana de importar
+const plSnap=()=>JSON.stringify({rooms:PL.rooms,off:[...(PL.off||[])],labs:PL.labs,tabOff:[...(PL.tabOff||[])],mode:PL.mode});
+function plPush(){ (PL.hist ||= []).push(plSnap()); if(PL.hist.length>100) PL.hist.shift(); PL.fut=[]; }
+function plRestore(j){ const o=JSON.parse(j); PL.rooms=o.rooms; PL.off=new Set(o.off); PL.labs=o.labs; PL.tabOff=new Set(o.tabOff); PL.mode=o.mode; }
+function plUndo(){ if(!PL.hist?.length){ toast("No hay nada que deshacer."); return; } (PL.fut ||= []).push(plSnap()); plRestore(PL.hist.pop()); planoRender(); }
+function plRedo(){ if(!PL.fut?.length){ toast("No hay nada que rehacer."); return; } (PL.hist ||= []).push(plSnap()); plRestore(PL.fut.pop()); planoRender(); }
+const rdSnapState=()=>JSON.stringify({pts:PL.rd.pts,closed:!!PL.rd.closed});
+function rdPush(){ if(!PL.rd) return; (PL.rd.hist ||= []).push(rdSnapState()); PL.rd.fut=[]; }
+function rdUndo(){ const r=PL.rd; if(!r?.hist?.length){ toast("No hay nada que deshacer."); return; } (r.fut ||= []).push(rdSnapState()); const o=JSON.parse(r.hist.pop()); r.pts=o.pts; r.closed=o.closed; r.sel=null; planoRender(); }
+function rdRedo(){ const r=PL.rd; if(!r?.fut?.length){ toast("No hay nada que rehacer."); return; } (r.hist ||= []).push(rdSnapState()); const o=JSON.parse(r.fut.pop()); r.pts=o.pts; r.closed=o.closed; r.sel=null; planoRender(); }
+const undoBar=(rd)=>`<span class="pl-ur"><button class="btn sm" type="button" data-pl="${rd?"rdU":"plU"}"${(rd?PL.rd?.hist?.length:PL.hist?.length)?"":" disabled"} title="Deshacer (Ctrl+Z)">↶ Deshacer</button><button class="btn sm" type="button" data-pl="${rd?"rdR":"plR"}"${(rd?PL.rd?.fut?.length:PL.fut?.length)?"":" disabled"} title="Rehacer (Ctrl+Y)">↷ Rehacer</button></span>`;
 // Lápiz y papelera arriba a la derecha de un número del plano
 function plIconsSVG(x,y,fs,editAttr,delAttr){
   const r=fs*.8, ex=x+fs*1.5, dx=x+fs*3.2, cy=y-fs*1.05;
@@ -4197,6 +4209,7 @@ function rdOverlay(){
 }
 function rdFinish(){
   const P=PL.rd?.pts||[]; if(P.length<3){ toast("Pon al menos tres esquinas."); return; }
+  if(PL.rdSnap0) { (PL.hist ||= []).push(PL.rdSnap0); PL.fut=[]; PL.rdSnap0=null; }
   const e=PL.rooms.find(x=>x.i===PL.rd.i), nm=(PL.rd.name||"").trim(), moved=JSON.stringify(P)!==PL.rd.orig;
   if(e){ if(moved){ const [n]=roomsToCm([{nombre:e.nombre,m2:e.m2,P:P.map(p=>[...p])}]); Object.assign(e,{P:n.P,Q:n.Q,mx:n.mx,my:n.my,area:n.area,dudosa:false}); }
     if(nm){ e.nombre=nm; if(PL.free){ const L=plLabs(), en=L.find(l=>l.room===e.i); if(en){ en.t=nm; en.ocr=false; } else { const xs=P.map(p=>p[0]), ys=P.map(p=>p[1]); L.push({room:e.i,x:(Math.min(...xs)+Math.max(...xs))/2,y:(Math.min(...ys)+Math.max(...ys))/2,t:nm,ocr:false}); } } }
@@ -4243,7 +4256,7 @@ function planoDetect(){
       W=E.ctx?detectWhole(E.ctx):null; }catch(e){ E=[]; }
     PL.noScale=false;
     if(!E.length&&!W){ PL.step="cal"; PL.err="No he encontrado las paredes. Comprueba la escala o dibújalo tú con «Dibujarlas yo»."; planoRender(); return; }
-    PL.rooms=roomsToCm(E); PL.whole=W; PL.tabOff=new Set(); PL.ctx=E.ctx||null; PL.maskUrl=PL.ctx?maskURL(PL.ctx):null; PL.mode=PL.mode||"varias"; if(!W) PL.mode="varias"; PL.labs=null; plLabs();
+    PL.hist=[]; PL.fut=[]; PL.rooms=roomsToCm(E); PL.whole=W; PL.tabOff=new Set(); PL.ctx=E.ctx||null; PL.maskUrl=PL.ctx?maskURL(PL.ctx):null; PL.mode=PL.mode||"varias"; if(!W) PL.mode="varias"; PL.labs=null; plLabs();
     PL.off=new Set(PL.rooms.filter(e=>e.dudosa).map(e=>e.i)); PL.step="result"; planoRender();
     const ocr=PL.ocrP?null:plOCR(); (ocr||PL.ocrP).then(ws=>{ plApplyOCR(ws); if(PL.step==="result"){ planoRender(); } });
   },30);
@@ -4291,7 +4304,7 @@ function calOverlay(){
   return (a&&b?`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#F86C2F" stroke-width="2" vector-effect="non-scaling-stroke"/>`:"")+(a?mk(a):"")+(b?mk(b):"");
 }
 function planoRender(){ planoRender0(); plApply(); }
-const wallTools=()=>PL.free?`<div class="pl-acts pl-wt"><button class="btn sm${PL.pick?" primary":""}" type="button" data-pl="pickWall">🎯 ${PL.pick?"Toca el relleno de una pared en el plano…":PL.wallPick?"Elegir otra pared":"¿Fallan las paredes? Elige su color"}</button><button class="btn sm ghost" type="button" data-pl="mask">👁 ${PL.showMask!==false?"Ocultar":"Ver"} paredes detectadas</button>${PL.wallPick?`<label class="pl-tol">Sensibilidad <input type="range" id="pl_tol" min="10" max="110" step="5" value="${PL.wallPick.tol}"></label><button class="btn sm ghost" type="button" data-pl="pickReset">Volver a la automática</button>`:""}</div>`:"";
+const wallTools=()=>PL.free?`<div class="pl-acts pl-wt">${undoBar(false)}<button class="btn sm${PL.pick?" primary":""}" type="button" data-pl="pickWall">🎯 ${PL.pick?"Toca el relleno de una pared en el plano…":PL.wallPick?"Elegir otra pared":"¿Fallan las paredes? Elige su color"}</button><button class="btn sm ghost" type="button" data-pl="mask">👁 ${PL.showMask!==false?"Ocultar":"Ver"} paredes detectadas</button>${PL.wallPick?`<label class="pl-tol">Sensibilidad <input type="range" id="pl_tol" min="10" max="110" step="5" value="${PL.wallPick.tol}"></label><button class="btn sm ghost" type="button" data-pl="pickReset">Volver a la automática</button>`:""}</div>`:"";
 const maskImg=()=>PL.showMask!==false&&PL.maskUrl?`<image href="${PL.maskUrl}" x="0" y="0" width="${PL.w}" height="${PL.h}" preserveAspectRatio="none" opacity=".55"/>`:"";
 const modeSeg=()=>`<div class="seg pl-seg" role="group" aria-label="Cómo crear el plano"><button type="button" data-plmode="varias" aria-pressed="${PL.mode!=="una"}">▦ Una estancia por habitación</button><button type="button" data-plmode="una" aria-pressed="${PL.mode==="una"}">🏠 Toda la casa en una estancia</button></div>`;
 function planoRender0(){
@@ -4321,8 +4334,9 @@ function planoRender0(){
       ${dest}<div class="pl-acts"><button class="btn primary" type="button" data-pl="create">Crear la estancia</button><button class="btn" type="button" data-pl="trace">✏️ Mejor la dibujo yo</button><button class="btn ghost sm" type="button" data-pl="cal">Cambiar la escala</button></div>
       <p class="muted" style="font-size:12px">La forma y los tabiques son aproximados: en «Editar estancia» pulsa una medida azul para ajustarla, o un tabique para cambiarlo o quitarlo.</p>`; return; }
   if(PL.step==="result"){
-    const R=PL.rooms, fs=Math.max(14,PL.w/45), NUM=new Map(R.map((e,k)=>[e.i,k+1])), poly=R.map(e=>{ const c=PL_COL[e.i%PL_COL.length], on=!PL.off?.has(e.i), xs=e.P.map(p=>p[0]), ys=e.P.map(p=>p[1]), mx=(Math.min(...xs)+Math.max(...xs))/2, my=(Math.min(...ys)+Math.max(...ys))/2;
-      return `<g data-plr="${e.i}" style="cursor:pointer" opacity="${on?1:.3}"><polygon points="${e.P.map(q=>q.join(",")).join(" ")}" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="${Math.max(2,PL.w/400)}"/><circle cx="${mx}" cy="${my}" r="${fs*.8}" fill="${c}"/><text x="${mx}" y="${my}" dy=".35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="#fff">${NUM.get(e.i)}</text>${PL.free?plIconsSVG(mx,my,fs,`data-plredraw="${e.i}"`,`data-plrdel="${e.i}"`):""}</g>`; }).join("");
+    const R=PL.rooms, fs=Math.max(14,PL.w/45), NUM=new Map(R.map(e=>[e.i,e.i+1])), ctr=e=>{ const xs=e.P.map(p=>p[0]), ys=e.P.map(p=>p[1]); return [(Math.min(...xs)+Math.max(...xs))/2,(Math.min(...ys)+Math.max(...ys))/2]; };
+    const poly=R.map(e=>{ const c=PL_COL[e.i%PL_COL.length], on=!PL.off?.has(e.i); return `<g data-plr="${e.i}" style="cursor:pointer" opacity="${on?1:.3}"><polygon points="${e.P.map(q=>q.join(",")).join(" ")}" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="${Math.max(2,PL.w/400)}"/></g>`; }).join("")
+      +R.map(e=>{ const c=PL_COL[e.i%PL_COL.length], on=!PL.off?.has(e.i), [mx,my]=ctr(e); return `<g data-plr="${e.i}" style="cursor:pointer" opacity="${on?1:.45}"><circle cx="${mx}" cy="${my}" r="${fs*.8}" fill="${c}" stroke="#fff" stroke-width="${fs*.1}"/><text x="${mx}" y="${my}" dy=".35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="#fff">${NUM.get(e.i)}</text>${PL.free?plIconsSVG(mx,my,fs,`data-plredraw="${e.i}"`,`data-plrdel="${e.i}"`):""}</g>`; }).join("");
     B.innerHTML=`${err}${PL.free&&PL.whole?modeSeg():""}${wallTools()}${planoSVG(maskImg()+poly)}
       <p>He encontrado <b>${R.length} estancia${R.length>1?"s":""}</b>. ${PL.free?`Pulsa ✏️ para ponerles nombre o corregirlas y 🗑 para quitar las que sobren (el número coincide con el del plano).${PL.rooms.some(e=>e.dudosa)?" Las desmarcadas parecen espacios de fuera de la casa.":""}`:"Quita las que no quieras y cambia el nombre si hace falta."}${PL.noScale?" <b>No he podido sacar la escala</b>: revisa las medidas después.":""}</p>
       <ul class="pl-list">${R.map(e=>{ const {W,L}=bbox(e.Q); return `<li><input type="checkbox" id="pl_on${e.i}"${PL.off?.has(e.i)?"":" checked"} aria-label="Crear ${esc(e.nombre)}"><span class="pl-sw pl-num" style="background:${PL_COL[e.i%PL_COL.length]}">${NUM.get(e.i)}</span><b class="pl-name">${esc(plName(e))}</b><small>${cm(W)}×${cm(L)} cm · ${m2(e.area)} m²${e.m2?` (plano: ${m2(e.m2)})`:""}</small><button class="btn ghost sm" type="button" data-plredraw="${e.i}" title="Cambiar el nombre o la forma">✏️ Editar</button><button class="icon-btn sm danger" type="button" data-plrdel="${e.i}" title="Quitar esta estancia" aria-label="Quitar ${esc(e.nombre)}">🗑</button></li>`; }).join("")}</ul>
@@ -4334,7 +4348,7 @@ function planoRender0(){
     B.innerHTML=`${err}<div class="pl-acts"><label for="rd_name" style="font-weight:700">Nombre</label><input id="rd_name" type="text" value="${esc(PL.rd.name||"")}" placeholder="Salón, Dormitorio 1…" style="flex:1;min-width:0"></div>
       <p>${closed?`<b>Arrastra cualquier punto</b> para corregir la forma. Si falta una esquina, <b>toca la pared</b> donde va y arrástrala; si sobra, toca el punto y quítalo. Pulsa «Listo» cuando esté bien.`:`toca cada esquina por dentro de sus paredes. El punto va donde toques y se imanta a la esquina o pared del plano más cercana. Para cerrarla, toca el punto <b style="color:#2F855A">verde</b>; luego aún podrás corregir los puntos arrastrándolos.`} Acércate con los dedos, la rueda o Ctrl + para afinar.</p>
       ${planoSVG(rdOverlay(),"cal")}
-      <div class="pl-acts">${closed?`<button class="btn primary" type="button" data-pl="rdDone">Listo</button>${PL.rd.sel!=null?`<button class="btn danger" type="button" data-pl="rdDelPt"${pts.length<=3?" disabled":""}>🗑 Quitar este punto</button>`:""}<button class="btn" type="button" data-pl="rdOpen">Seguir añadiendo puntos</button><button class="btn ghost sm" type="button" data-pl="rdClear">🗑 Borrar la forma y dibujarla de cero</button>`:`<button class="btn primary" type="button" data-pl="rdClose"${pts.length<3?" disabled":""}>Cerrar la forma</button><button class="btn" type="button" data-pl="rdUndo"${pts.length?"":" disabled"}>↶ Quitar el último punto</button>`}<button class="btn ghost sm" type="button" data-pl="rdCancel">Cancelar</button></div>`; return; }
+      <div class="pl-acts">${undoBar(true)}${closed?`<button class="btn primary" type="button" data-pl="rdDone">Listo</button>${PL.rd.sel!=null?`<button class="btn danger" type="button" data-pl="rdDelPt"${pts.length<=3?" disabled":""}>🗑 Quitar este punto</button>`:""}<button class="btn" type="button" data-pl="rdOpen">Seguir añadiendo puntos</button><button class="btn ghost sm" type="button" data-pl="rdClear">🗑 Borrar la forma y dibujarla de cero</button>`:`<button class="btn primary" type="button" data-pl="rdClose"${pts.length<3?" disabled":""}>Cerrar la forma</button><button class="btn" type="button" data-pl="rdUndo"${pts.length?"":" disabled"}>↶ Quitar el último punto</button>`}<button class="btn ghost sm" type="button" data-pl="rdCancel">Cancelar</button></div>`; return; }
   if(PL.step==="cal"){
     const [a,b]=PL.cal||[];
     B.innerHTML=`${err}<p><b>1 ·</b> Pincha los dos extremos de algo cuya medida sepas: la barra de escala (por ejemplo de 0 a 5 m) o una cota del plano. Acércate para hacerlo exacto; si un punto no ha quedado bien, arrástralo.</p>
@@ -4347,15 +4361,15 @@ $("planoBody").addEventListener("input",e=>{ const id=e.target.id||""; let m;
   else if(id==="rd_name"&&PL.rd) PL.rd.name=e.target.value;
   else if((m=/^pl_l(\d+)$/.exec(id))){ const l=plLabs()[+m[1]]; if(l){ l.t=e.target.value; l.ocr=false; } }
   else if((m=/^pl_n(\d+)$/.exec(id))&&PL.free){ const l=plLabs().find(x=>x.room===+m[1]); if(l){ l.t=e.target.value; l.ocr=false; } } });
-$("planoBody").addEventListener("change",e=>{ if(e.target.id==="pl_tol"&&PL.wallPick){ PL.wallPick.tol=+e.target.value; planoDetect(); return; } const m=/^pl_on(\d+)$/.exec(e.target.id||""); if(m){ PL.off ||= new Set(); e.target.checked?PL.off.delete(+m[1]):PL.off.add(+m[1]); const g=document.querySelector(`[data-plr="${m[1]}"]`); if(g) g.setAttribute("opacity",e.target.checked?1:.3); } if(e.target.id==="pl_file") planoFile(e.target.files[0]); if(e.target.id==="pl_cm") PL.calCm=+e.target.value||500; });
+$("planoBody").addEventListener("change",e=>{ if(e.target.id==="pl_tol"&&PL.wallPick){ PL.wallPick.tol=+e.target.value; planoDetect(); return; } const m=/^pl_on(\d+)$/.exec(e.target.id||""); if(m){ plPush(); PL.off ||= new Set(); e.target.checked?PL.off.delete(+m[1]):PL.off.add(+m[1]); const g=document.querySelector(`[data-plr="${m[1]}"]`); if(g) g.setAttribute("opacity",e.target.checked?1:.3); } if(e.target.id==="pl_file") planoFile(e.target.files[0]); if(e.target.id==="pl_cm") PL.calCm=+e.target.value||500; });
 $("planoBody").addEventListener("click",e=>{
-  const tb=e.target.closest("[data-pltab]"); if(tb&&!PL.dragged){ const i=+tb.dataset.pltab; PL.tabOff ||= new Set(); PL.tabOff.has(i)?PL.tabOff.delete(i):PL.tabOff.add(i); planoRender(); return; }
+  const tb=e.target.closest("[data-pltab]"); if(tb&&!PL.dragged){ plPush(); const i=+tb.dataset.pltab; PL.tabOff ||= new Set(); PL.tabOff.has(i)?PL.tabOff.delete(i):PL.tabOff.add(i); planoRender(); return; }
   const rdel=e.target.closest("[data-plrdel]");
-  if(rdel&&!PL.dragged){ const i=+rdel.dataset.plrdel, e0=PL.rooms.find(x=>x.i===i); PL.rooms=PL.rooms.filter(x=>x.i!==i); if(PL.labs) PL.labs=PL.labs.filter(l=>l.room!==i); PL.off?.delete(i); planoRender(); toast(`«${e0?.nombre||"Estancia"}» quitada de la lista`); return; }
+  if(rdel&&!PL.dragged){ plPush(); const i=+rdel.dataset.plrdel, e0=PL.rooms.find(x=>x.i===i); PL.rooms=PL.rooms.filter(x=>x.i!==i); if(PL.labs) PL.labs=PL.labs.filter(l=>l.room!==i); PL.off?.delete(i); planoRender(); toast(`«${e0?.nombre||"Estancia"}» quitada de la lista`); return; }
   const led=e.target.closest("[data-pllabed]"); if(led&&!PL.dragged){ const f=$("pl_l"+led.dataset.pllabed); f?.scrollIntoView({block:"center",behavior:"smooth"}); f?.focus(); f?.select(); return; }
-  const ldel=e.target.closest("[data-pllabdel]"); if(ldel&&!PL.dragged){ const L=plLabs(), i=+ldel.dataset.pllabdel; L.splice(i,1); planoRender(); return; }
-  const rd=e.target.closest("[data-plredraw]"); if(rd){ const e0=PL.rooms.find(x=>x.i===+rd.dataset.plredraw); if(!e0) return; PL.rd={i:e0.i,pts:e0.P.map(p=>[...p]),closed:true,name:plName(e0),orig:JSON.stringify(e0.P)}; PL.step="redraw"; PL.err=""; planoRender(); return; }
-  const pm=e.target.closest("[data-plmode]"); if(pm){ PL.mode=pm.dataset.plmode; planoRender(); return; }
+  const ldel=e.target.closest("[data-pllabdel]"); if(ldel&&!PL.dragged){ plPush(); const L=plLabs(), i=+ldel.dataset.pllabdel; L.splice(i,1); planoRender(); return; }
+  const rd=e.target.closest("[data-plredraw]"); if(rd){ const e0=PL.rooms.find(x=>x.i===+rd.dataset.plredraw); if(!e0) return; PL.rdSnap0=plSnap(); PL.rd={i:e0.i,pts:e0.P.map(p=>[...p]),closed:true,name:plName(e0),orig:JSON.stringify(e0.P),hist:[],fut:[]}; PL.step="redraw"; PL.err=""; planoRender(); return; }
+  const pm=e.target.closest("[data-plmode]"); if(pm){ if(PL.mode!==pm.dataset.plmode) plPush(); PL.mode=pm.dataset.plmode; planoRender(); return; }
   const zb=e.target.closest("[data-plz]");
   if(zb){ const k=zb.dataset.plz; if(k==="fit"){ PL.z=1; plApply(); } else plZoom(k==="in"?1.6:1/1.6); return; }
   if(e.target.closest("#pl_svg")&&PL.dragged){ PL.dragged=false; return; }
@@ -4366,30 +4380,31 @@ $("planoBody").addEventListener("click",e=>{
     else if(a==="cal"){ PL.step="cal"; PL.cal=[]; PL.err=""; planoRender(); }
     else if(a==="calReset"){ PL.cal=[]; planoRender(); }
     else if(a==="newImport"){ planoOpen(); }
-    else if(a==="rdUndo"){ PL.rd?.pts.pop(); planoRender(); }
+    else if(a==="rdUndo"){ rdPush(); PL.rd?.pts.pop(); planoRender(); }
+    else if(a==="rdU") rdUndo(); else if(a==="rdR") rdRedo(); else if(a==="plU") plUndo(); else if(a==="plR") plRedo();
     else if(a==="pickWall"){ PL.pick=!PL.pick; planoRender(); }
     else if(a==="mask"){ PL.showMask=PL.showMask===false; planoRender(); }
     else if(a==="pickReset"){ PL.wallPick=null; PL.pick=false; planoDetect(); }
-    else if(a==="rdClose"){ if(PL.rd&&PL.rd.pts.length>=3){ PL.rd.closed=true; planoRender(); } }
-    else if(a==="rdOpen"){ if(PL.rd){ PL.rd.closed=false; planoRender(); } }
-    else if(a==="rdClear"){ if(PL.rd){ PL.rd.pts=[]; PL.rd.closed=false; PL.rd.sel=null; planoRender(); } }
-    else if(a==="rdDelPt"){ const r0=PL.rd; if(r0&&r0.sel!=null&&r0.pts.length>3){ r0.pts.splice(r0.sel,1); r0.sel=null; planoRender(); } }
+    else if(a==="rdClose"){ if(PL.rd&&PL.rd.pts.length>=3){ rdPush(); PL.rd.closed=true; planoRender(); } }
+    else if(a==="rdOpen"){ if(PL.rd){ rdPush(); PL.rd.closed=false; planoRender(); } }
+    else if(a==="rdClear"){ if(PL.rd){ rdPush(); PL.rd.pts=[]; PL.rd.closed=false; PL.rd.sel=null; planoRender(); } }
+    else if(a==="rdDelPt"){ const r0=PL.rd; if(r0&&r0.sel!=null&&r0.pts.length>3){ rdPush(); r0.pts.splice(r0.sel,1); r0.sel=null; planoRender(); } }
     else if(a==="rdCancel"){ PL.rd=null; PL.step="result"; planoRender(); }
     else if(a==="rdDone") rdFinish();
     else if(a==="back"){ PL.step=PL.rooms?"result":"img"; planoRender(); }
     else if(a==="again"){ for(const k in PL) delete PL[k]; PL.step="pick"; planoRender(); }
     return; }
   const g=e.target.closest("[data-plr]");
-  if(g&&PL.step==="result"){ const i=+g.dataset.plr; PL.off ||= new Set(); PL.off.has(i)?PL.off.delete(i):PL.off.add(i); const cb=$("pl_on"+i); if(cb) cb.checked=!PL.off.has(i); g.setAttribute("opacity",PL.off.has(i)?.3:1); return; }
+  if(g&&PL.step==="result"){ plPush(); const i=+g.dataset.plr; PL.off ||= new Set(); PL.off.has(i)?PL.off.delete(i):PL.off.add(i); planoRender(); return; }
   if(PL.step==="redraw"&&PL.rd?.closed){ const svg2=e.target.closest("#pl_svg"); if(!svg2) return; const P=PL.rd.pts, raw=plToImg(svg2,e.clientX,e.clientY), R=18/svg2.getScreenCTM().a;
     let j=-1, bd=R; P.forEach((p,k)=>{ const d=Math.hypot(raw.x-p[0],raw.y-p[1]); if(d<bd){ bd=d; j=k; } });
     if(j>=0){ PL.rd.sel=PL.rd.sel===j?null:j; planoRender(); return; }
     let best=null; P.forEach((p,k)=>{ const q=P[(k+1)%P.length], dx=q[0]-p[0], dy=q[1]-p[1], L2=dx*dx+dy*dy||1, t=Math.max(0,Math.min(1,((raw.x-p[0])*dx+(raw.y-p[1])*dy)/L2)), d=Math.hypot(raw.x-p[0]-dx*t,raw.y-p[1]-dy*t); if(d<R*1.2&&(!best||d<best.d)) best={k,d}; });
-    if(best){ const q=rdSnap(svg2,raw,-1); P.splice(best.k+1,0,q); PL.rd.sel=best.k+1; planoRender(); toast("Esquina nueva: arrástrala a su sitio."); return; }
+    if(best){ rdPush(); const q=rdSnap(svg2,raw,-1); P.splice(best.k+1,0,q); PL.rd.sel=best.k+1; planoRender(); toast("Esquina nueva: arrástrala a su sitio."); return; }
     if(PL.rd.sel!=null){ PL.rd.sel=null; planoRender(); } return; }
   if(PL.step==="redraw"){ const svg2=e.target.closest("#pl_svg"); if(!svg2||PL.rd.closed) return; const P=PL.rd.pts, raw=plToImg(svg2,e.clientX,e.clientY), q=rdSnap(svg2,raw);
-    const R=18/svg2.getScreenCTM().a; if(P.length>=3&&Math.hypot(raw.x-P[0][0],raw.y-P[0][1])<R){ PL.rd.closed=true; planoRender(); return; }
-    const l=P[P.length-1]; if(l&&Math.hypot(q[0]-l[0],q[1]-l[1])<1) return; P.push(q); planoRender(); return; }
+    const R=18/svg2.getScreenCTM().a; if(P.length>=3&&Math.hypot(raw.x-P[0][0],raw.y-P[0][1])<R){ rdPush(); PL.rd.closed=true; planoRender(); return; }
+    const l=P[P.length-1]; if(l&&Math.hypot(q[0]-l[0],q[1]-l[1])<1) return; rdPush(); P.push(q); planoRender(); return; }
   const svg=e.target.closest("#pl_svg"); if(!svg||PL.step!=="cal") return;
   const q=plToImg(svg,e.clientX,e.clientY);
   const v=[Math.max(0,Math.min(PL.w,q.x)),Math.max(0,Math.min(PL.h,q.y))];
@@ -4427,7 +4442,7 @@ $("planoBody").addEventListener("pointermove",e=>{
   if(plG.t==="pinch"){ if(PLP.size<2) return; const [a,b]=[...PLP.values()], d=Math.hypot(a.x-b.x,a.y-b.y), mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
     PL.z=Math.min(20,Math.max(1,plG.z*d/plG.d)); plApply(); const c=plToImg(svg,mx,my); PL.cx+=plG.mx-c.x; PL.cy+=plG.my-c.y; plApply(); return; }
   const dx=e.clientX-plG.x, dy=e.clientY-plG.y; if(!plG.moved&&Math.hypot(dx,dy)<6) return; if(!plG.moved){ try{ svg.setPointerCapture(e.pointerId); }catch{} } plG.moved=true; PL.dragged=true;
-  if(plG.t==="rpt"){ PL.rd.sel=plG.i; PL.rd.pts[plG.i]=rdSnap(svg,plToImg(svg,e.clientX,e.clientY),plG.i); $("pl_ov").innerHTML=rdOverlay(); plApply(); return; }
+  if(plG.t==="rpt"){ if(!plG.pushed){ rdPush(); plG.pushed=true; } PL.rd.sel=plG.i; PL.rd.pts[plG.i]=rdSnap(svg,plToImg(svg,e.clientX,e.clientY),plG.i); $("pl_ov").innerHTML=rdOverlay(); plApply(); return; }
   if(plG.t==="pt"){ const q=plToImg(svg,e.clientX,e.clientY); PL.cal[plG.i]=[Math.max(0,Math.min(PL.w,q.x)),Math.max(0,Math.min(PL.h,q.y))]; $("pl_ov").innerHTML=calOverlay(); return; }
   if(plZ()>1){ const k=1/svg.getScreenCTM().a; PL.cx=plG.cx-dx*k; PL.cy=plG.cy-dy*k; plApply(); }
 });
@@ -4436,7 +4451,8 @@ $("planoBody").addEventListener("pointerup",plUp); $("planoBody").addEventListen
 $("planoBody").addEventListener("wheel",e=>{ const svg=e.target.closest("#pl_svg"); if(!svg) return; e.preventDefault();
   const q=plToImg(svg,e.clientX,e.clientY); plZoom(Math.exp(-e.deltaY*(e.ctrlKey?.01:.002)),q.x,q.y); },{passive:false});
 document.addEventListener("keydown",e=>{ if(!$("dlgPlano")?.open||!$("pl_svg")||!(e.ctrlKey||e.metaKey)) return;
-  if(e.key.toLowerCase()==="z"&&PL.step==="redraw"&&!e.target.closest("input")){ e.preventDefault(); PL.rd?.pts.pop(); planoRender(); return; }
+  if(!e.target.closest("input[type=text],input:not([type])")){ const k=e.key.toLowerCase(), redo=k==="y"||(k==="z"&&e.shiftKey), und=k==="z"&&!e.shiftKey;
+    if((und||redo)&&(PL.step==="redraw"||PL.step==="result")){ e.preventDefault(); if(PL.step==="redraw") (redo?rdRedo:rdUndo)(); else (redo?plRedo:plUndo)(); return; } }
   if(e.key==="+"||e.key==="="||e.code==="NumpadAdd"){ e.preventDefault(); plZoom(1.4); }
   else if(e.key==="-"||e.code==="NumpadSubtract"){ e.preventDefault(); plZoom(1/1.4); }
   else if(e.key==="0"){ e.preventDefault(); PL.z=1; plApply(); } },true);
