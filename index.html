@@ -3775,7 +3775,8 @@ function detectRooms(opt={}){
   while(qh<qt){ const i=q[qh++], x=i%w; if(x>0) push(i-1); if(x<w-1) push(i+1); if(i>=w) push(i-w); if(i<N-w) push(i+w); }
   const OUT=morph(E,w,h,rb,false), ok=i=>!OUT[i]&&!M[i];
   // Núcleos de cada estancia: lejos de las paredes, así las puertas no las juntan
-  const W2=morph(M,w,h,rd,false), lab=new Int32Array(N); let n=0;
+  const MO=new Uint8Array(N); for(let i=0;i<N;i++) MO[i]=M[i]||OUT[i]?1:0;
+  const W2=morph(MO,w,h,rd,false), lab=new Int32Array(N); let n=0;
   for(let i0=0;i0<N;i0++){ if(lab[i0]||W2[i0]||!ok(i0)) continue; n++; qh=0; qt=0; lab[i0]=n; q[qt++]=i0;
     while(qh<qt){ const i=q[qh++], x=i%w; for(const j of [x>0?i-1:-1,x<w-1?i+1:-1,i-w,i+w]) if(j>=0&&j<N&&!lab[j]&&!W2[j]&&ok(j)){ lab[j]=n; q[qt++]=j; } } }
   // Cada núcleo crece hasta las paredes
@@ -3802,11 +3803,11 @@ function detectRooms(opt={}){
       const A=polyArea(loop); if(A>bestA){ bestA=A; best=loop; } }
     if(!best) return;
     let P=dpClosed(best,eps).map(([x,y])=>[x/s,y/s]); P=unbump(orthoPoly(P),120/PL.k,280/PL.k); if(P.length<3) return;
-    const B=bb.get(l), bw=B.x1-B.x0+1, bh=B.y1-B.y0+1, dudosa=B.c[0]>=bh*.6||B.c[1]>=bh*.6||B.c[2]>=bw*.6||B.c[3]>=bw*.6;
+    const B=bb.get(l), bw=B.x1-B.x0+1, bh=B.y1-B.y0+1, dudosa=B.c[0]>=bh*.8||B.c[1]>=bh*.8||B.c[2]>=bw*.8||B.c[3]>=bw*.8;
     out.push({nombre:"",m2:null,P,dudosa,cy:P.reduce((t,p)=>t+p[1],0)/P.length,cx:P.reduce((t,p)=>t+p[0],0)/P.length}); });
   out.sort((a,b)=>Math.round(a.cy/(PL.h/6))-Math.round(b.cy/(PL.h/6))||a.cx-b.cx);
   out.forEach((e,i)=>e.nombre=`Estancia ${i+1}`);
-  const bad=new Set(); bb.forEach((B,l)=>{ const bw=B.x1-B.x0+1, bh=B.y1-B.y0+1; if(B.c[0]>=bh*.6||B.c[1]>=bh*.6||B.c[2]>=bw*.6||B.c[3]>=bw*.6) bad.add(l); });
+  const bad=new Set(); bb.forEach((B,l)=>{ const bw=B.x1-B.x0+1, bh=B.y1-B.y0+1; if((B.c[0]>=bh*.8||B.c[1]>=bh*.8||B.c[2]>=bw*.8||B.c[3]>=bw*.8)&&area[l]*cm2<10e4) bad.add(l); });
   out.ctx={w,h,s,kw,M,OUT,lab,bad};
   return out;
 }
@@ -3942,7 +3943,11 @@ function planoDetect(){
   if(!planoScale()) return;
   PL.step="reading"; PL.err=""; PL.free=true; planoRender();
   setTimeout(()=>{
-    let E=[], W=null; try{ E=detectRooms(); if(E.length<2){ const E2=detectRooms({dT:25,door:60}); if(E2.length>E.length) E=E2; } W=E.ctx?detectWhole(E.ctx):null; }catch(e){ E=[]; }
+    let E=[], W=null; try{
+      // se prueban varios anchos de puerta y se queda el que separa más habitaciones de verdad
+      const score=X=>X.filter(e=>!e.dudosa&&polyArea(e.P)*PL.k*PL.k>=3e4).length; let best=-1;
+      for(const o of [{door:45},{door:55},{door:65},{door:80},{dT:25,door:55}]){ const X=detectRooms(o), sc=score(X); if(sc>best){ best=sc; E=X; } }
+      W=E.ctx?detectWhole(E.ctx):null; }catch(e){ E=[]; }
     PL.noScale=false;
     if(!E.length&&!W){ PL.step="cal"; PL.err="No he encontrado las paredes. Comprueba la escala o dibújalo tú con «Dibujarlas yo»."; planoRender(); return; }
     PL.rooms=roomsToCm(E); PL.whole=W; PL.tabOff=new Set(); PL.mode=PL.mode||(W?"una":"varias"); if(!W) PL.mode="varias"; PL.labs=null; plLabs();
