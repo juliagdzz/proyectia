@@ -4188,7 +4188,7 @@ function rdOverlay(){
   const e=PL.rooms.find(x=>x.i===PL.rd.i), P=PL.rd.pts, sw=Math.max(2,PL.w/300), z=plZ(), closed=PL.rd.closed;
   const old=e?`<polygon points="${e.P.map(q=>q.join(",")).join(" ")}" fill="#9CA3AF" fill-opacity=".15" stroke="#6B7280" stroke-width="2" stroke-dasharray="6 5" vector-effect="non-scaling-stroke"/>`:"";
   const shape=P.length>1?(closed?`<polygon points="${P.map(q=>q.join(",")).join(" ")}" fill="#2B6CB0" fill-opacity=".18" stroke="#6D0101" stroke-width="3" vector-effect="non-scaling-stroke"/>`:`<polyline points="${P.map(q=>q.join(",")).join(" ")}" fill="none" stroke="#6D0101" stroke-width="3" vector-effect="non-scaling-stroke"/>`):"";
-  const dots=P.map((q,j)=>{ const r0=closed?sw*2:j?sw*1.6:sw*2.4; return `<circle cx="${q[0]}" cy="${q[1]}" data-r="${r0}" r="${r0/z}" fill="${closed?"#fff":j?"#6D0101":"#2F855A"}" stroke="${closed?"#C2410C":"#fff"}" stroke-width="${closed?2.5:1.5}" vector-effect="non-scaling-stroke"/>`; }).join("");
+  const dots=P.map((q,j)=>{ const sl=closed&&PL.rd.sel===j, r0=sl?sw*2.8:closed?sw*2:j?sw*1.6:sw*2.4; return `<circle cx="${q[0]}" cy="${q[1]}" data-r="${r0}" r="${r0/z}" fill="${sl?"#23407E":closed?"#fff":j?"#6D0101":"#2F855A"}" stroke="${closed?"#C2410C":"#fff"}" stroke-width="${closed?2.5:1.5}" vector-effect="non-scaling-stroke"/>`; }).join("");
   return old+shape+dots;
 }
 function rdFinish(){
@@ -4309,9 +4309,9 @@ function planoRender0(){
   if(PL.step==="redraw"){
     const e=PL.rooms.find(x=>x.i===PL.rd.i), pts=PL.rd.pts, closed=PL.rd.closed;
     B.innerHTML=`${err}<div class="pl-acts"><label for="rd_name" style="font-weight:700">Nombre</label><input id="rd_name" type="text" value="${esc(PL.rd.name||"")}" placeholder="Salón, Dormitorio 1…" style="flex:1;min-width:0"></div>
-      <p>${closed?`<b>Arrastra cualquier punto</b> para corregir la forma y pulsa «Listo» cuando esté bien.`:`toca cada esquina por dentro de sus paredes. El punto va donde toques y se imanta a la esquina o pared del plano más cercana. Para cerrarla, toca el punto <b style="color:#2F855A">verde</b>; luego aún podrás corregir los puntos arrastrándolos.`} Acércate con los dedos, la rueda o Ctrl + para afinar.</p>
+      <p>${closed?`<b>Arrastra cualquier punto</b> para corregir la forma. Si falta una esquina, <b>toca la pared</b> donde va y arrástrala; si sobra, toca el punto y quítalo. Pulsa «Listo» cuando esté bien.`:`toca cada esquina por dentro de sus paredes. El punto va donde toques y se imanta a la esquina o pared del plano más cercana. Para cerrarla, toca el punto <b style="color:#2F855A">verde</b>; luego aún podrás corregir los puntos arrastrándolos.`} Acércate con los dedos, la rueda o Ctrl + para afinar.</p>
       ${planoSVG(rdOverlay(),"cal")}
-      <div class="pl-acts">${closed?`<button class="btn primary" type="button" data-pl="rdDone">Listo</button><button class="btn" type="button" data-pl="rdOpen">Seguir añadiendo puntos</button><button class="btn ghost sm" type="button" data-pl="rdClear">🗑 Borrar la forma y dibujarla de cero</button>`:`<button class="btn primary" type="button" data-pl="rdClose"${pts.length<3?" disabled":""}>Cerrar la forma</button><button class="btn" type="button" data-pl="rdUndo"${pts.length?"":" disabled"}>↶ Quitar el último punto</button>`}<button class="btn ghost sm" type="button" data-pl="rdCancel">Cancelar</button></div>`; return; }
+      <div class="pl-acts">${closed?`<button class="btn primary" type="button" data-pl="rdDone">Listo</button>${PL.rd.sel!=null?`<button class="btn danger" type="button" data-pl="rdDelPt"${pts.length<=3?" disabled":""}>🗑 Quitar este punto</button>`:""}<button class="btn" type="button" data-pl="rdOpen">Seguir añadiendo puntos</button><button class="btn ghost sm" type="button" data-pl="rdClear">🗑 Borrar la forma y dibujarla de cero</button>`:`<button class="btn primary" type="button" data-pl="rdClose"${pts.length<3?" disabled":""}>Cerrar la forma</button><button class="btn" type="button" data-pl="rdUndo"${pts.length?"":" disabled"}>↶ Quitar el último punto</button>`}<button class="btn ghost sm" type="button" data-pl="rdCancel">Cancelar</button></div>`; return; }
   if(PL.step==="cal"){
     const [a,b]=PL.cal||[];
     B.innerHTML=`${err}<p><b>1 ·</b> Pincha los dos extremos de algo cuya medida sepas: la barra de escala (por ejemplo de 0 a 5 m) o una cota del plano. Acércate para hacerlo exacto; si un punto no ha quedado bien, arrástralo.</p>
@@ -4345,7 +4345,8 @@ $("planoBody").addEventListener("click",e=>{
     else if(a==="rdUndo"){ PL.rd?.pts.pop(); planoRender(); }
     else if(a==="rdClose"){ if(PL.rd&&PL.rd.pts.length>=3){ PL.rd.closed=true; planoRender(); } }
     else if(a==="rdOpen"){ if(PL.rd){ PL.rd.closed=false; planoRender(); } }
-    else if(a==="rdClear"){ if(PL.rd){ PL.rd.pts=[]; PL.rd.closed=false; planoRender(); } }
+    else if(a==="rdClear"){ if(PL.rd){ PL.rd.pts=[]; PL.rd.closed=false; PL.rd.sel=null; planoRender(); } }
+    else if(a==="rdDelPt"){ const r0=PL.rd; if(r0&&r0.sel!=null&&r0.pts.length>3){ r0.pts.splice(r0.sel,1); r0.sel=null; planoRender(); } }
     else if(a==="rdCancel"){ PL.rd=null; PL.step="result"; planoRender(); }
     else if(a==="rdDone") rdFinish();
     else if(a==="back"){ PL.step=PL.rooms?"result":"img"; planoRender(); }
@@ -4353,6 +4354,12 @@ $("planoBody").addEventListener("click",e=>{
     return; }
   const g=e.target.closest("[data-plr]");
   if(g&&PL.step==="result"){ const i=+g.dataset.plr; PL.off ||= new Set(); PL.off.has(i)?PL.off.delete(i):PL.off.add(i); const cb=$("pl_on"+i); if(cb) cb.checked=!PL.off.has(i); g.setAttribute("opacity",PL.off.has(i)?.3:1); return; }
+  if(PL.step==="redraw"&&PL.rd?.closed){ const svg2=e.target.closest("#pl_svg"); if(!svg2) return; const P=PL.rd.pts, raw=plToImg(svg2,e.clientX,e.clientY), R=18/svg2.getScreenCTM().a;
+    let j=-1, bd=R; P.forEach((p,k)=>{ const d=Math.hypot(raw.x-p[0],raw.y-p[1]); if(d<bd){ bd=d; j=k; } });
+    if(j>=0){ PL.rd.sel=PL.rd.sel===j?null:j; planoRender(); return; }
+    let best=null; P.forEach((p,k)=>{ const q=P[(k+1)%P.length], dx=q[0]-p[0], dy=q[1]-p[1], L2=dx*dx+dy*dy||1, t=Math.max(0,Math.min(1,((raw.x-p[0])*dx+(raw.y-p[1])*dy)/L2)), d=Math.hypot(raw.x-p[0]-dx*t,raw.y-p[1]-dy*t); if(d<R*1.2&&(!best||d<best.d)) best={k,d}; });
+    if(best){ const q=rdSnap(svg2,raw,-1); P.splice(best.k+1,0,q); PL.rd.sel=best.k+1; planoRender(); toast("Esquina nueva: arrástrala a su sitio."); return; }
+    if(PL.rd.sel!=null){ PL.rd.sel=null; planoRender(); } return; }
   if(PL.step==="redraw"){ const svg2=e.target.closest("#pl_svg"); if(!svg2||PL.rd.closed) return; const P=PL.rd.pts, raw=plToImg(svg2,e.clientX,e.clientY), q=rdSnap(svg2,raw);
     const R=18/svg2.getScreenCTM().a; if(P.length>=3&&Math.hypot(raw.x-P[0][0],raw.y-P[0][1])<R){ PL.rd.closed=true; planoRender(); return; }
     const l=P[P.length-1]; if(l&&Math.hypot(q[0]-l[0],q[1]-l[1])<1) return; P.push(q); planoRender(); return; }
@@ -4393,7 +4400,7 @@ $("planoBody").addEventListener("pointermove",e=>{
   if(plG.t==="pinch"){ if(PLP.size<2) return; const [a,b]=[...PLP.values()], d=Math.hypot(a.x-b.x,a.y-b.y), mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
     PL.z=Math.min(20,Math.max(1,plG.z*d/plG.d)); plApply(); const c=plToImg(svg,mx,my); PL.cx+=plG.mx-c.x; PL.cy+=plG.my-c.y; plApply(); return; }
   const dx=e.clientX-plG.x, dy=e.clientY-plG.y; if(!plG.moved&&Math.hypot(dx,dy)<6) return; if(!plG.moved){ try{ svg.setPointerCapture(e.pointerId); }catch{} } plG.moved=true; PL.dragged=true;
-  if(plG.t==="rpt"){ PL.rd.pts[plG.i]=rdSnap(svg,plToImg(svg,e.clientX,e.clientY),plG.i); $("pl_ov").innerHTML=rdOverlay(); plApply(); return; }
+  if(plG.t==="rpt"){ PL.rd.sel=plG.i; PL.rd.pts[plG.i]=rdSnap(svg,plToImg(svg,e.clientX,e.clientY),plG.i); $("pl_ov").innerHTML=rdOverlay(); plApply(); return; }
   if(plG.t==="pt"){ const q=plToImg(svg,e.clientX,e.clientY); PL.cal[plG.i]=[Math.max(0,Math.min(PL.w,q.x)),Math.max(0,Math.min(PL.h,q.y))]; $("pl_ov").innerHTML=calOverlay(); return; }
   if(plZ()>1){ const k=1/svg.getScreenCTM().a; PL.cx=plG.cx-dx*k; PL.cy=plG.cy-dy*k; plApply(); }
 });
