@@ -1551,7 +1551,7 @@ function hitCorners(it){
   return [[cx-h,cy-h],[cx+h,cy-h],[cx+h,cy+h],[cx-h,cy+h]];
 }
 function problems(items,rm){
-  const EST=(rm.estructura||[]).map(e=>({Q:estQuad(e),z:e.tipo==="viga"?techoR(rm)-(+e.h||30):0}));
+  const EST=(rm.estructura||[]).map(e=>({Q:estQuad(e),z:e.tipo==="viga"?techoR(rm)-(+e.h||30):e.tipo==="puerta"?(+e.h||210):0}));
   const bad=new Set(), P=pts(rm), rug=i=>/alfombra/i.test(i.nombre||"")||["alfombra","alfombraR"].includes(i.forma)||isWallItem(i);
   items.forEach(a=>{
     if(!isHueco(a)&&!itemFits(a,a.x,a.y,P)) bad.add(a.id);
@@ -1633,7 +1633,7 @@ function roomGeomSVG(P,pad,floorHex,o={}){
     return o.edit?`<g data-wlen="${i}" style="cursor:pointer"><rect transform="translate(${mx} ${my}) rotate(${ang})" x="${-fs*1.9}" y="${-fs*.85}" width="${fs*3.8}" height="${fs*1.7}" rx="${fs*.85}" fill="var(--blue-ink)"/>${t}</g>`:t;
   }).join("");
   // vigas, columnas y tabiques: forman parte de la estancia
-  const est=(r.estructura||[]).map(e=>{ const box=e.tipo==="viga"?`<rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.d}" fill="var(--wall)" fill-opacity=".22" stroke="var(--wall)" stroke-width="2" stroke-dasharray="7 5"/>`:`<rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.d}" fill="var(--wall)"/>`;
+  const est=(r.estructura||[]).map(e=>{ const box=e.tipo==="puerta"?estDoorSVG(e):e.tipo==="viga"?`<rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.d}" fill="var(--wall)" fill-opacity=".22" stroke="var(--wall)" stroke-width="2" stroke-dasharray="7 5"/>`:`<rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.d}" fill="var(--wall)"/>`;
     return o.edit?`<g data-est="${esc(e.id)}" style="cursor:pointer">${box}${String(S.fixForm?.eid)===String(e.id)?`<rect x="${e.x-3}" y="${e.y-3}" width="${e.w+6}" height="${e.d+6}" fill="none" stroke="var(--red)" stroke-width="3"/>`:""}</g>`:box; }).join("");
   // modo pintar: cada pared con su color, y se pulsa para elegirla
   const PW=r.paredes||{}, paint=o.paint?P.map((p,i)=>{ const q=P[(i+1)%P.length], [nx,ny]=inward(P,i), c=(PW[i]||{}).c||r.paredColor||DEF_FIN.paredColor, sel=String(S.finWall)===String(i);
@@ -1738,7 +1738,7 @@ function shapePanel(r,P){
   const rect=isRect(P), alto=techoR(r), f=S.fixForm;
   const num=(id,label,v,extra="")=>`<div><label for="${id}">${label}</label><input id="${id}" type="number" min="1" step="1" inputmode="numeric" value="${v??""}"${extra}></div>`;
   const holes=S.items.filter(i=>i.estanciaId===r.id&&isHueco(i)), est=r.estructura||[];
-  const estName=e=>({viga:"Viga",pilar:"Columna",tabique:"Tabique"})[e.tipo]||"Elemento";
+  const estName=e=>({viga:"Viga",pilar:"Columna",tabique:"Tabique",puerta:"Puerta en tabique"})[e.tipo]||"Elemento";
   if(S.wallDraw){ const n=S.wallDraw.pts.length;
     return `<div class="panel room-ed"><div class="ph"><h3>Dibujar pared</h3></div>
     <ol class="sh-steps"><li>Pincha en una <b>pared o esquina</b> para empezar (también vale en medio de la estancia para un tabique suelto).</li><li>Pincha donde la pared <b>gira</b>. El punto va donde pinches (también en diagonal) y se imanta a las esquinas y paredes cercanas; ves lo que mide cada tramo.</li><li>Termina pinchando <b>otra pared</b>: si has ido por fuera, la estancia crece; si has ido por dentro, se crea un tabique.</li></ol>
@@ -1753,7 +1753,7 @@ function shapePanel(r,P){
   let form="";
   if(f){
     const el=f.eid!=null&&est.find(x=>String(x.id)===String(f.eid)), t=f.tipo, horiz=f.dir?f.dir==="h":true, v=k=>f[k]??"";
-    form=`<div class="fx-form"><h4>${el?"Editar":"Nueva"} ${t==="viga"?"viga":t==="pilar"?"columna":"pared interior (tabique)"}</h4>
+    form=`<div class="fx-form"><h4>${el?"Editar":"Nueva"} ${t==="viga"?"viga":t==="pilar"?"columna":t==="puerta"?"puerta en tabique":"pared interior (tabique)"}</h4>
       ${t==="pilar"?"":`<div class="full"><label for="fx_dir">Dirección</label><select id="fx_dir"><option value="h"${horiz?" selected":""}>De izquierda a derecha ↔</option><option value="v"${horiz?"":" selected"}>De arriba abajo ↕</option></select></div>`}
       ${t==="viga"?num("fx_w","Largo (cm)",v("w"))+num("fx_d","Ancho (cm)",v("d"))+num("fx_h","Cuánto baja desde el techo (cm)",v("h"))
         :t==="pilar"?num("fx_w","Ancho (cm)",v("w"))+num("fx_d","Fondo (cm)",v("d"))
@@ -1777,7 +1777,7 @@ function shapePanel(r,P){
     </section>
     <section class="re-s"><h4>3 · Columnas, vigas y tabiques</h4>
       <p class="muted" style="margin:0;font-size:13px">Forman parte de las paredes: se ven del color de la pared y los muebles no pueden ocupar su sitio. Púlsalos en el plano para cambiarlos.</p>
-      ${est.length?`<ul class="fx-list">${est.map(e=>`<li><span class="fx-ic">${e.tipo==="viga"?"▬":e.tipo==="pilar"?"■":"▮"}</span><span class="fx-t"><b>${estName(e)}</b><small>${cm(e.w)} × ${cm(e.d)} cm${e.tipo==="viga"?` · baja ${cm(e.h)} cm`:""}</small></span><button class="btn ghost sm" type="button" data-fxedit="${esc(e.id)}">Editar</button><button class="icon-btn sm danger" type="button" data-fxdel="${esc(e.id)}" aria-label="Quitar">✕</button></li>`).join("")}</ul>`:""}
+      ${est.length?`<ul class="fx-list">${est.map(e=>`<li><span class="fx-ic">${e.tipo==="viga"?"▬":e.tipo==="pilar"?"■":e.tipo==="puerta"?"🚪":"▮"}</span><span class="fx-t"><b>${estName(e)}</b><small>${cm(e.w)} × ${cm(e.d)} cm${e.tipo==="viga"?` · baja ${cm(e.h)} cm`:""}</small></span><button class="btn ghost sm" type="button" data-fxedit="${esc(e.id)}">Editar</button><button class="icon-btn sm danger" type="button" data-fxdel="${esc(e.id)}" aria-label="Quitar">✕</button></li>`).join("")}</ul>`:""}
       ${form||`<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" type="button" data-fxnew="pilar">＋ Columna</button><button class="btn sm" type="button" data-fxnew="viga">＋ Viga</button><button class="btn sm" type="button" data-fxnew="tabique">＋ Tabique</button></div>`}
     </section>
     <section class="re-s"><h4>4 · Puertas y ventanas</h4>
@@ -2190,7 +2190,7 @@ function snapToWall(it,r){
 function freeSpot(it,r){
   const P=pts(r), {W,L}=bbox(P), {fw,fd}=footprint(it), h=shape3d(it).h, step=10;
   const others=S.items.filter(o=>o.estanciaId===r.id&&o.tipo!=="ventana"&&!isRug(o)&&!isWallItem(o)).map(o=>({C:hitCorners(o),z:+o.z||0,h:shape3d(o).h}))
-    .concat((r.estructura||[]).map(e=>({C:estQuad(e),z:e.tipo==="viga"?techoR(r)-(+e.h||30):0,h:9999})));
+    .concat((r.estructura||[]).map(e=>({C:estQuad(e),z:e.tipo==="viga"?techoR(r)-(+e.h||30):e.tipo==="puerta"?(+e.h||210):0,h:9999})));
   const cx=(W-fw)/2, cy=(L-fd)/2, cands=[];
   for(let x=0;x<=W-fw;x+=step) for(let y=0;y<=L-fd;y+=step) cands.push([x,y,(x-cx)**2+(y-cy)**2]);
   cands.push([Math.max(0,cx),Math.max(0,cy),-1]); cands.sort((a,b)=>a[2]-b[2]);
@@ -2232,7 +2232,7 @@ function surfaceSpot(it,r){
 const HUMAN={w:50,d:30};
 function hObstacles(r){
   return S.items.filter(i=>i.estanciaId===r.id&&!isHueco(i)&&!isRug(i)&&!isWallItem(i)&&!isCeiling(i)&&!(+i.z>5)).map(i=>{ const f=footprint(i); return {id:i.id,x1:i.x,y1:i.y,x2:i.x+f.fw,y2:i.y+f.fd}; })
-    .concat((r.estructura||[]).filter(e=>e.tipo!=="viga").map(e=>({id:"e"+e.id,x1:e.x,y1:e.y,x2:e.x+e.w,y2:e.y+e.d})));
+    .concat((r.estructura||[]).filter(e=>e.tipo!=="viga"&&e.tipo!=="puerta").map(e=>({id:"e"+e.id,x1:e.x,y1:e.y,x2:e.x+e.w,y2:e.y+e.d})));
 }
 function rayWall(P,px,py,dx,dy){ let best=Infinity;
   P.forEach((p,i)=>{ const q=P[(i+1)%P.length], ex=q[0]-p[0], ey=q[1]-p[1], den=dx*ey-dy*ex; if(Math.abs(den)<1e-9) return;
@@ -2861,7 +2861,12 @@ function build3dRoom(r){
     const wall=new T.Mesh(new T.PlaneGeometry(sg.len,H),wallMat(sg.len,i)); wall.receiveShadow=true; wall.userData.wallIdx=i; putOn(wall,sg,.5,H/2,0); G.add(wall);
     const sk=new T.Mesh(new T.PlaneGeometry(sg.len,8),mat(0xFFF8EF)); putOn(sk,sg,.5,4,.3); G.add(sk);
   });
-  (r.estructura||[]).forEach(e=>{ const hh=e.tipo==="viga"?(+e.h||30):e.tipo==="pilar"?H:Math.min(H,+e.h||H), y0=e.tipo==="viga"?H-hh:0;
+  (r.estructura||[]).filter(e=>e.tipo==="puerta").forEach(e=>{ const dh=Math.min(H-2,+e.h||210), hor=e.w>=e.d, L=hor?e.w:e.d, t=hor?e.d:e.w, cx=e.x+e.w/2, cz=e.y+e.d/2;
+    const wallC=new T.Color(F.paredColor), lint=new T.Mesh(new T.BoxGeometry(Math.max(1,e.w),H-dh,Math.max(1,e.d)),mat(wallC,{emissive:wallC,emissiveIntensity:.25})); lint.position.set(cx,dh+(H-dh)/2,cz); lint.castShadow=true; G.add(lint);
+    const fr=(w2,h2,d2,x,y,z,c)=>{ const m=new T.Mesh(new T.BoxGeometry(w2,h2,d2),mat(c)); m.position.set(x,y,z); m.castShadow=true; G.add(m); };
+    if(hor){ fr(4,dh,t+2,e.x+2,dh/2,cz,0xFFF8EF); fr(4,dh,t+2,e.x+e.w-2,dh/2,cz,0xFFF8EF); fr(L-8,dh-6,3,cx,(dh-6)/2,cz,0x8A5A3C); }
+    else { fr(t+2,dh,4,cx,dh/2,e.y+2,0xFFF8EF); fr(t+2,dh,4,cx,dh/2,e.y+e.d-2,0xFFF8EF); fr(3,dh-6,L-8,cx,(dh-6)/2,cz,0x8A5A3C); } });
+  (r.estructura||[]).filter(e=>e.tipo!=="puerta").forEach(e=>{ const hh=e.tipo==="viga"?(+e.h||30):e.tipo==="pilar"?H:Math.min(H,+e.h||H), y0=e.tipo==="viga"?H-hh:0;
     const m=new T.Mesh(new T.BoxGeometry(Math.max(1,e.w),hh,Math.max(1,e.d)),mat(new T.Color(F.paredColor).multiplyScalar(e.tipo==="viga"?.94:1),{emissive:new T.Color(F.paredColor),emissiveIntensity:.25}));
     m.position.set(e.x+e.w/2,y0+hh/2,e.y+e.d/2); m.castShadow=true; m.receiveShadow=true; G.add(m); });
   if(S.human||S.dims) human3d(T,G,r,mat);
@@ -3745,9 +3750,10 @@ function wallMask(px,w,h,kw,opt={}){
   // paredes rellenas de gris: solo cuenta el gris del relleno, no las líneas negras de muebles y textos
   if(opt.band){ const [a,b]=opt.band; for(let i=0;i<N;i++) M[i]=L[i]>=a&&L[i]<b?1:0; }
   else for(let i=0;i<N;i++) M[i]=L[i]<T?1:0;
+  const R0=new Uint8Array(N); for(let i=0;i<N;i++) R0[i]=L[i]<(opt.band?150:Math.max(T,150))?1:0;
   const ho=Math.max(1,Math.floor((opt.thin||(opt.band?2:3))/kw)); M=morph(morph(M,w,h,ho,true),w,h,ho,false);
   if(opt.band) M=morph(M,w,h,1,false); // recupera el contorno de la pared
-  return {M,T};
+  return {M,T,R0};
 }
 // Busca la cara de pared más cercana en horizontal y en vertical (coordenadas de la estancia, en cm)
 function guideSnap(G,c,x,y,R){
@@ -3835,14 +3841,17 @@ async function planoCreate(redraw){
   try{
     const {pid,bg}=await planoProject(); let first=null, n=0;
     let rid=null;
+    let nh=0;
     for(const e of sel){ const id=uid(), {W,L}=bbox(e.Q); first ||= id; if(e.i===redraw) rid=id;
-      await save("estancias",id,{proyectoId:pid,nombre:($("pl_n"+e.i)?.value||"").trim()||e.nombre,ancho:W,largo:L,alto:250,puntos:e.Q.map(([x,y])=>({x,y})),calco:{plano:1,x:-e.mx,y:-e.my,w:bg.w,l:bg.l},creado:Date.now()+(n++)}); }
+      await save("estancias",id,{proyectoId:pid,nombre:($("pl_n"+e.i)?.value||"").trim()||e.nombre,ancho:W,largo:L,alto:250,puntos:e.Q.map(([x,y])=>({x,y})),calco:{plano:1,x:-e.mx,y:-e.my,w:bg.w,l:bg.l},creado:Date.now()+(n++)});
+      if(PL.free&&PL.ctx){ let ops=[]; try{ ops=detectOpenings(PL.ctx,e.P); }catch{} for(const it of openingItems(id,e.Q,ops)){ await save("items",uid(),it).catch(()=>{}); nh++; } } }
+    PL.holesMade=nh;
     $("dlgPlano").close(); S.view="proyecto"; S.tab="plano"; S.vista="2d"; S.roomId=rid||first; S.editShape=false;
     const rr=rid&&S.estancias.find(x=>x.id===rid);
     if(rr){ S.editShape=true; S.paint=false; S.sel=null; S.shapeSel=null; S.fixForm=null; S.holeForm=null; S.wallDraw=null; const {ox,oy}=drawFrame(rr,1.5,600);
       S.drawMode=true; S.drawNew=false; S.drawExt=false; S.drawRef=null; S.drawSel=null; S.drawPts=[]; S.drawOff={x:ox,y:oy}; render(); window.scrollTo({top:0,behavior:"smooth"});
       toast(`Dibuja «${rr.nombre}» pinchando sus esquinas encima del plano. Las demás ya están creadas.`); return; }
-    render(); toast(`${sel.length} estancia${sel.length>1?"s creadas":" creada"}. Revisa las medidas en «Editar estancia».`);
+    render(); toast(`${sel.length} estancia${sel.length>1?"s creadas":" creada"}${PL.holesMade?` con ${PL.holesMade} puertas y ventanas`:""}. Revisa las medidas en «Editar estancia».`);
   }catch{ toast("No se han podido crear las estancias."); }
 }
 
@@ -3864,7 +3873,7 @@ function otsu(L){
 function detectRooms(opt={}){
   const s=Math.min(1,900/Math.max(PL.w,PL.h)), w=Math.round(PL.w*s), h=Math.round(PL.h*s), N=w*h;
   const cv=document.createElement("canvas"); cv.width=w; cv.height=h; const cx=cv.getContext("2d"); cx.drawImage(PL.canvas,0,0,w,h);
-  const kw=PL.k/s, {M,T}=wallMask(cx.getImageData(0,0,w,h).data,w,h,kw,opt);
+  const kw=PL.k/s, {M,T,R0}=wallMask(cx.getImageData(0,0,w,h).data,w,h,kw,opt);
   const rd=Math.max(2,Math.round((opt.door||45)/kw)), rb=Math.max(rd+2,Math.round(130/kw));
   // Lo que queda fuera de la casa: se cierra con un radio grande para tapar ventanas
   const D=morph(M,w,h,rb,false), E=new Uint8Array(N), q=new Int32Array(N); let qh=0,qt=0;
@@ -3906,8 +3915,29 @@ function detectRooms(opt={}){
   out.sort((a,b)=>Math.round(a.cy/(PL.h/6))-Math.round(b.cy/(PL.h/6))||a.cx-b.cx);
   out.forEach((e,i)=>e.nombre=`Estancia ${i+1}`);
   const bad=new Set(); bb.forEach((B,l)=>{ const bw=B.x1-B.x0+1, bh=B.y1-B.y0+1; if((B.c[0]>=bh*.8||B.c[1]>=bh*.8||B.c[2]>=bw*.8||B.c[3]>=bw*.8)&&area[l]*cm2<10e4) bad.add(l); });
-  out.ctx={w,h,s,kw,M,OUT,lab,bad};
+  out.ctx={w,h,s,kw,M,OUT,lab,bad,R0};
   return out;
+}
+// Huecos en las paredes de un contorno (en px de la imagen): ventana si se ve el cristal dibujado, puerta si está vacío y mide como una puerta
+function detectOpenings(ctx,Ppl){
+  const {w,h,s,kw,M,R0}=ctx; if(!M) return [];
+  const at=(x,y)=>{ x=Math.round(x); y=Math.round(y); return x>=0&&y>=0&&x<w&&y<h&&M[y*w+x]; }, raw=(x,y)=>{ x=Math.round(x); y=Math.round(y); return R0&&x>=0&&y>=0&&x<w&&y<h&&R0[y*w+x]; };
+  const P=Ppl.map(([x,y])=>[x*s,y*s]), T=Math.max(3,Math.round(40/kw)), m=Math.max(1,Math.round(8/kw)), out=[];
+  P.forEach((p,i)=>{ const q=P[(i+1)%P.length], len=Math.hypot(q[0]-p[0],q[1]-p[1]); if(len*kw<60) return;
+    const ux=(q[0]-p[0])/len, uy=(q[1]-p[1])/len, [ix,iy]=inward(P,i), nx=-ix, ny=-iy, n=Math.floor(len), open=new Uint8Array(n), glass=new Uint8Array(n);
+    for(let k=0;k<n;k++){ const bx=p[0]+ux*k, by=p[1]+uy*k; let wall=false, g=false;
+      for(let t=-1;t<=T;t++){ const X=bx+nx*t, Y=by+ny*t; if(at(X,Y)){ wall=true; break; } if(t>=1&&t<=T*.8&&raw(X,Y)) g=true; }
+      open[k]=wall?0:1; glass[k]=g?1:0; }
+    let k=m; while(k<n-m){ if(!open[k]){ k++; continue; } let e=k; while(e<n-m&&open[e]) e++;
+      const L=(e-k)*kw; let gl=0; for(let j=k;j<e;j++) gl+=glass[j]; const fg=gl/Math.max(1,e-k);
+      let tipo=null; if(fg>.5&&L>=50) tipo=L>=230?"balconera":"ventana"; else if(L>=55&&L<=135) tipo="puerta"; else if(L>135&&L<=175) tipo="puerta2";
+      if(tipo) out.push({i,s:k*kw,w:Math.round(L/5)*5,tipo}); k=e; } });
+  return out;
+}
+// Las convierte en puertas y ventanas de la estancia (P en cm de la estancia, con las mismas paredes)
+function openingItems(rid,P,ops){
+  return ops.map(o=>{ const tipo=o.tipo==="balconera"?"ventana":o.tipo, pose=holePose(P,o.i,o.s+o.w/2,tipo,o.w), n={puerta:"Puerta",puerta2:"Puerta doble",ventana:"Ventana",balconera:"Balconera"}[o.tipo];
+    return {estanciaId:rid,tipo,nombre:`${n} ${o.w}`,w:o.w,...pose,color:0,...(tipo==="ventana"?{z:o.tipo==="balconera"?0:90,h:o.tipo==="balconera"?220:120}:{espejo:false}),creado:Date.now()}; });
 }
 // Contorno exterior (el más grande) de una máscara
 function maskLoop(C,w,h){
@@ -3958,7 +3988,17 @@ function detectWhole(ctx){
     for(let yy=y;yy<=y1;yy++) for(let xx=x;xx<=x1;xx++) used[yy*w+xx]=1;
     const t={x:x*kw,y:y*kw,w:(x1+1-x)*kw,d:(y1+1-y)*kw}, a=Math.min(t.w,t.d), b=Math.max(t.w,t.d);
     if(a>=4&&a<=45&&b>=45) tab.push(t); }
-  return {P,tab:tab.sort((a,b)=>Math.max(b.w,b.d)-Math.max(a.w,a.d)).slice(0,150)};
+  const tabs=tab.sort((a,b)=>Math.max(b.w,b.d)-Math.max(a.w,a.d)).slice(0,150);
+  // Puertas interiores: desde el final de cada tabique se busca la siguiente pared; si hay entre 55 y 130 cm, es una puerta
+  const doors=[], atM=(x,y)=>x>=0&&y>=0&&x<w&&y<h&&M[y*w+x];
+  for(const t of tabs){ const x0=Math.round(t.x/kw), y0=Math.round(t.y/kw), x1=Math.round((t.x+t.w)/kw), y1=Math.round((t.y+t.d)/kw), hor=t.w>=t.d, maxR=Math.round(135/kw);
+    const tries=hor?[[x1,1],[x0-1,-1]]:[[y1,1],[y0-1,-1]];
+    for(const [st,dir] of tries){ let run=0, hit=false; const c0=hor?Math.round((y0+y1)/2):Math.round((x0+x1)/2);
+      for(let k=0;k<maxR;k++){ const a=st+dir*k, X=hor?a:c0, Y=hor?c0:a; if(X<0||Y<0||X>=w||Y>=h||!C[Y*w+X]&&!M[Y*w+X]) break; if(atM(X,Y)){ hit=true; break; } run++; }
+      const g=run*kw; if(!hit||g<55||g>130) continue;
+      const a0=dir>0?st:st-run+1, d=hor?{x:a0*kw,y:t.y,w:g,d:t.d}:{x:t.x,y:a0*kw,w:t.w,d:g};
+      if(!doors.some(o=>Math.abs(o.x-d.x)<20&&Math.abs(o.y-d.y)<20)) doors.push(d); } }
+  return {P,tab:tabs,doors};
 }
 /* Nombres de las habitaciones con OCR en el navegador (Tesseract, gratis): solo palabras de estancias */
 const VOC={SALON:"Salón",COCINA:"Cocina",COMEDOR:"Comedor",DORMITORIO:"Dormitorio",DORM:"Dorm.",BANO:"Baño",ASEO:"Aseo",TERRAZA:"Terraza",TENDEDERO:"Tendedero",HALL:"Hall",PASILLO:"Pasillo",RECIBIDOR:"Recibidor",DISTRIBUIDOR:"Distribuidor",VESTIDOR:"Vestidor",LAVADERO:"Lavadero",DESPACHO:"Despacho",ESTUDIO:"Estudio",ENTRADA:"Entrada",GALERIA:"Galería",TRASTERO:"Trastero",BALCON:"Balcón",PATIO:"Patio",JARDIN:"Jardín",ESTAR:"Estar",LAVANDERIA:"Lavandería",DESPENSA:"Despensa",GARAJE:"Garaje",SOLARIUM:"Solárium",PRINCIPAL:"principal",SUITE:"Suite",PORCHE:"Porche",BUHARDILLA:"Buhardilla",COLADA:"Colada",OFFICE:"Office",VESTIBULO:"Vestíbulo",CUARTO:"Cuarto",PLANCHA:"Plancha"};
@@ -4087,6 +4127,12 @@ function wallDrawFinish(r,free){
   S.wallDraw=null; saveShape(r,best.map(([x,y])=>[Math.round(x),Math.round(y)]));
   toast("Paredes nuevas añadidas. Pulsa una medida para ajustarla.",undo);
 }
+// Puerta en un tabique: hueco con la hoja y su giro
+function estDoorSVG(e){
+  const hor=e.w>=e.d, L=hor?e.w:e.d, t=hor?e.d:e.w;
+  if(hor){ const y=e.y+e.d/2; return `<rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.d}" fill="var(--floor)"/><rect x="${e.x}" y="${e.y}" width="${t*.5}" height="${e.d}" fill="var(--wall)"/><rect x="${e.x+e.w-t*.5}" y="${e.y}" width="${t*.5}" height="${e.d}" fill="var(--wall)"/><line x1="${e.x}" y1="${y}" x2="${e.x}" y2="${y+L}" stroke="var(--ink)" stroke-width="2"/><path d="M${e.x} ${y+L}A${L} ${L} 0 0 0 ${e.x+L} ${y}" fill="none" stroke="var(--ink)" stroke-width="1" stroke-dasharray="4 4"/>`; }
+  const x=e.x+e.w/2; return `<rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.d}" fill="var(--floor)"/><rect x="${e.x}" y="${e.y}" width="${e.w}" height="${t*.5}" fill="var(--wall)"/><rect x="${e.x}" y="${e.y+e.d-t*.5}" width="${e.w}" height="${t*.5}" fill="var(--wall)"/><line x1="${x}" y1="${e.y}" x2="${x+L}" y2="${e.y}" stroke="var(--ink)" stroke-width="2"/><path d="M${x+L} ${e.y}A${L} ${L} 0 0 1 ${x} ${e.y+L}" fill="none" stroke="var(--ink)" stroke-width="1" stroke-dasharray="4 4"/>`;
+}
 // Quita los salientes hacia fuera que dejan los huecos de puertas y ventanas (los entrantes se quedan: pueden ser pilares)
 function unbump(P,dmax,wmax){
   const col=(Q)=>Q.filter((p,i)=>{ const a=Q[(i-1+Q.length)%Q.length], b=Q[(i+1)%Q.length]; return Math.abs((p[0]-a[0])*(b[1]-p[1])-(p[1]-a[1])*(b[0]-p[0]))>1e-6; });
@@ -4176,10 +4222,12 @@ async function planoCreateWhole(){
     const {pid,bg}=await planoProject(), Q=Wh.P.map(([x,y])=>[Math.round(x*PL.k),Math.round(y*PL.k)]), mx=Math.min(...Q.map(p=>p[0])), my=Math.min(...Q.map(p=>p[1]));
     const P=Q.map(([x,y])=>[x-mx,y-my]), {W,L}=bbox(P), id=uid();
     const estructura=Wh.tab.filter((t,i)=>!PL.tabOff?.has(i)).map((t,i)=>({id:id+"t"+i,tipo:"tabique",x:Math.round(t.x-mx),y:Math.round(t.y-my),w:Math.max(1,Math.round(t.w)),d:Math.max(1,Math.round(t.d)),h:250})).filter(t=>t.x>=-5&&t.y>=-5&&t.x<W&&t.y<L);
+    (Wh.doors||[]).forEach((d,i)=>estructura.push({id:id+"d"+i,tipo:"puerta",x:Math.round(d.x-mx),y:Math.round(d.y-my),w:Math.max(1,Math.round(d.w)),d:Math.max(1,Math.round(d.d)),h:210}));
     const etiquetas=plLabs().filter(l=>l.t.trim()).map((l,i)=>({id:id+"l"+i,t:l.t.trim(),x:Math.round(l.x*PL.k-mx),y:Math.round(l.y*PL.k-my)}));
     await save("estancias",id,{proyectoId:pid,nombre:(PL.rname||"").trim()||"Casa",ancho:W,largo:L,alto:250,puntos:P.map(([x,y])=>({x,y})),estructura,etiquetas,calco:{plano:1,x:-mx,y:-my,w:bg.w,l:bg.l},creado:Date.now()});
+    let nh=0; if(PL.ctx){ let ops=[]; try{ ops=detectOpenings(PL.ctx,Wh.P); }catch{} for(const it of openingItems(id,P,ops)){ await save("items",uid(),it).catch(()=>{}); nh++; } }
     $("dlgPlano").close(); S.view="proyecto"; S.tab="plano"; S.vista="2d"; S.roomId=id; S.editShape=false; render();
-    toast(`Casa creada con ${estructura.length} tabiques${etiquetas.length?` y ${etiquetas.length} nombres`:""}. Ajusta lo que haga falta en «Editar estancia».`);
+    toast(`Casa creada con ${estructura.filter(e=>e.tipo==="tabique").length} tabiques, ${estructura.filter(e=>e.tipo==="puerta").length+nh} puertas y ventanas${etiquetas.length?` y ${etiquetas.length} nombres`:""}. Ajusta lo que haga falta en «Editar estancia».`);
   }catch{ toast("No se ha podido crear la estancia."); }
 }
 async function planoTrace(){
@@ -4228,11 +4276,11 @@ function planoRender0(){
     const Wh=PL.whole, sw=Math.max(2,PL.w/350), fs=Math.max(12,PL.w/50), labs=plLabs();
     const Q0=Wh.P.map(([x,y])=>[Math.round(x*PL.k),Math.round(y*PL.k)]), q0x=Math.min(...Q0.map(p=>p[0])), q0y=Math.min(...Q0.map(p=>p[1])), Q=Q0.map(([x,y])=>[x-q0x,y-q0y]), {W,L}=bbox(Q), area=polyArea(Q)/1e4;
     const ov=`<polygon points="${Wh.P.map(q=>q.join(",")).join(" ")}" fill="#2B6CB0" fill-opacity=".14" stroke="#2B6CB0" stroke-width="${sw}"/>`
-      +Wh.tab.map((t,i)=>{ const off=PL.tabOff?.has(i), m=Math.max(2,PL.w/250)/PL.k*PL.k; return `<g data-pltab="${i}" style="cursor:pointer"><rect x="${t.x/PL.k-m}" y="${t.y/PL.k-m}" width="${t.w/PL.k+2*m}" height="${t.d/PL.k+2*m}" fill="transparent"/><rect x="${t.x/PL.k}" y="${t.y/PL.k}" width="${t.w/PL.k}" height="${t.d/PL.k}" fill="${off?"#9CA3AF":"#C2410C"}" fill-opacity="${off?.35:.8}"/></g>`; }).join("")
+      +(Wh.doors||[]).map(d=>`<rect x="${d.x/PL.k}" y="${d.y/PL.k}" width="${d.w/PL.k}" height="${d.d/PL.k}" fill="#2F855A" fill-opacity=".8"/>`).join("")+Wh.tab.map((t,i)=>{ const off=PL.tabOff?.has(i), m=Math.max(2,PL.w/250)/PL.k*PL.k; return `<g data-pltab="${i}" style="cursor:pointer"><rect x="${t.x/PL.k-m}" y="${t.y/PL.k-m}" width="${t.w/PL.k+2*m}" height="${t.d/PL.k+2*m}" fill="transparent"/><rect x="${t.x/PL.k}" y="${t.y/PL.k}" width="${t.w/PL.k}" height="${t.d/PL.k}" fill="${off?"#9CA3AF":"#C2410C"}" fill-opacity="${off?.35:.8}"/></g>`; }).join("")
       +labs.map((l,i)=>`<g><circle cx="${l.x}" cy="${l.y}" r="${fs*.8}" fill="${l.t?"#2F855A":"#6B7280"}"/><text x="${l.x}" y="${l.y}" dy=".35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="#fff">${i+1}</text></g>`).join("");
     const st=PL.ocrState==="leyendo"?`<div class="pl-wait">Leyendo los nombres del plano… (la primera vez tarda un poco más)</div>`:PL.ocrState==="ok"?`<p class="muted" style="font-size:13px">✓ He leído los nombres que se entendían. Revisa y completa los que falten.</p>`:PL.ocrState?`<p class="muted" style="font-size:13px">No he podido leer los nombres del plano: escríbelos tú (los vacíos no se ponen).</p>`:"";
     B.innerHTML=`${err}${modeSeg()}${planoSVG(ov)}
-      <p>Toda la casa en <b>una estancia</b> de ${cm(W)}×${cm(L)} cm (${area.toLocaleString("es-ES",{maximumFractionDigits:1})} m²), con <b>${Wh.tab.length-(PL.tabOff?.size||0)} tramos de tabique</b> en naranja. <b>Toca uno para quitarlo</b> si es un mueble y no una pared (vuelve a tocarlo para recuperarlo).</p>
+      <p>Toda la casa en <b>una estancia</b> de ${cm(W)}×${cm(L)} cm (${area.toLocaleString("es-ES",{maximumFractionDigits:1})} m²), con <b>${Wh.tab.length-(PL.tabOff?.size||0)} tramos de tabique</b> en naranja${(Wh.doors||[]).length?` y <b>${Wh.doors.length} puertas interiores</b> en verde`:""}; las puertas y ventanas de las paredes de fuera se añaden al crearla. <b>Toca uno para quitarlo</b> si es un mueble y no una pared (vuelve a tocarlo para recuperarlo).</p>
       <div class="pl-acts"><label for="pl_rname" style="font-weight:600">Nombre</label><input id="pl_rname" type="text" value="${esc(PL.rname||"Casa")}" style="flex:1;min-width:0"></div>
       <h4 style="margin:4px 0 0">Nombres de las habitaciones <span class="muted" style="font-weight:400;font-size:13px">· se ven en el plano</span></h4>${st}
       <ul class="pl-list">${labs.map((l,i)=>`<li><span class="pl-sw pl-num" style="background:${l.t?"#2F855A":"#6B7280"}">${i+1}</span><input type="text" id="pl_l${i}" value="${esc(l.t)}" placeholder="Escribe el nombre o déjalo vacío"></li>`).join("")}</ul>
