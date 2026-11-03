@@ -3727,11 +3727,11 @@ function drawFrame(r,mult,min){
 const GUIDES=new Map();
 function planoGuide(r){
   const pl=S.proyectos.find(p=>p.id===r?.proyectoId)?.plano; if(!pl?.img||!r?.calco?.plano) return null;
-  const key=r.proyectoId+":"+pl.img.length+":"+(pl.T||0); let g=GUIDES.get(key); if(g) return g.M?g:null;
+  const key=r.proyectoId+":"+pl.img.length+":"+JSON.stringify(pl.wm||pl.T||0); let g=GUIDES.get(key); if(g) return g.M?g:null;
   g={}; GUIDES.set(key,g);
   const im=new Image(); im.onload=()=>{ try{
     const w=im.naturalWidth, h=im.naturalHeight, c=document.createElement("canvas"); c.width=w; c.height=h; const x=c.getContext("2d"); x.drawImage(im,0,0);
-    const kw=pl.w/w, {M}=wallMask(x.getImageData(0,0,w,h).data,w,h,kw,pl.T?{T:pl.T}:{});
+    const kw=pl.w/w, {M}=wallMask(x.getImageData(0,0,w,h).data,w,h,kw,pl.wm||(pl.T?{T:pl.T}:{}));
     const o=x.createImageData(w,h); for(let i=0;i<w*h;i++) if(M[i]) o.data.set([37,99,235,150],i*4);
     x.clearRect(0,0,w,h); x.putImageData(o,0,0); Object.assign(g,{M,w,h,kw,url:c.toDataURL("image/png")});
     if(S.drawMode) render(); }catch{} };
@@ -3741,8 +3741,12 @@ function planoGuide(r){
 function wallMask(px,w,h,kw,opt={}){
   const N=w*h, L=new Uint8Array(N); for(let i=0;i<N;i++) L[i]=(px[i*4]*299+px[i*4+1]*587+px[i*4+2]*114)/1000;
   const T=opt.T??Math.max(70,Math.min(170,otsu(L)+(opt.dT||0)));
-  let M=new Uint8Array(N); for(let i=0;i<N;i++) M[i]=L[i]<T?1:0;
-  const ho=Math.max(1,Math.floor((opt.thin||3)/kw)); M=morph(morph(M,w,h,ho,true),w,h,ho,false);
+  let M=new Uint8Array(N);
+  // paredes rellenas de gris: solo cuenta el gris del relleno, no las líneas negras de muebles y textos
+  if(opt.band){ const [a,b]=opt.band; for(let i=0;i<N;i++) M[i]=L[i]>=a&&L[i]<b?1:0; }
+  else for(let i=0;i<N;i++) M[i]=L[i]<T?1:0;
+  const ho=Math.max(1,Math.floor((opt.thin||(opt.band?2:3))/kw)); M=morph(morph(M,w,h,ho,true),w,h,ho,false);
+  if(opt.band) M=morph(M,w,h,1,false); // recupera el contorno de la pared
   return {M,T};
 }
 // Busca la cara de pared más cercana en horizontal y en vertical (coordenadas de la estancia, en cm)
@@ -3820,7 +3824,7 @@ function planoBg(){ const a=imgToJpeg(PL.canvas,1200,.7); return {img:a.url,w:Ma
 async function planoProject(){
   const dest=$("pl_dest")?.value||"cur"; let p=proyecto();
   if(!p||dest==="new"){ const id=uid(); await save("proyectos",id,{nombre:($("pl_pname")?.value||"").trim()||"Mi casa",tipo:"casa",presupuesto:0,direccion:"",notas:"",creado:Date.now()}); S.proyId=id; lsSet("proletix:proy",id); p=S.proyectos.find(x=>x.id===id); }
-  const bg={...planoBg(),...(PL.wallT?{T:PL.wallT}:{})}, {id,...b}=p; await save("proyectos",id,{...b,plano:bg}); return {pid:id,bg};
+  const bg={...planoBg(),...(PL.wallOpt?{wm:PL.wallOpt}:{})}, {id,...b}=p; await save("proyectos",id,{...b,plano:bg}); return {pid:id,bg};
 }
 async function planoCreate(redraw){
   if(PL.free&&PL.mode==="una"&&redraw==null) return planoCreateWhole();
@@ -4141,9 +4145,9 @@ function rdFinish(){
 // Prueba varios anchos de puerta y tonos de pared (también paredes gris claro) y se queda con lo que separa más habitaciones
 function bestDetect(){
   const score=X=>X.filter(e=>!e.dudosa&&polyArea(e.P)*PL.k*PL.k>=3e4).length; let best=-1, E=[], o0=null;
-  for(const o of [{door:45},{door:55},{door:65},{door:80},{dT:25,door:55},{T:200,door:55},{T:200,door:70},{T:225,door:55},{T:225,door:70}]){
+  for(const o of [{door:45},{door:55},{door:65},{door:80},{dT:25,door:55},{band:[150,236],door:55},{band:[150,236],door:70},{band:[110,236],door:55}]){
     let X=[]; try{ X=detectRooms(o); }catch{ X=[]; } const sc=score(X); if(sc>best){ best=sc; E=X; o0=o; } }
-  PL.wallT=o0?.T; return {E,opt:o0};
+  PL.wallOpt=o0?.band?{band:o0.band}:o0?.T?{T:o0.T}:null; return {E,opt:o0};
 }
 function planoScale(){
   const [a,b]=PL.cal||[], cmv=+($("pl_cm")?.value||PL.calCm||0), d=a&&b?Math.hypot(b[0]-a[0],b[1]-a[1]):0;
