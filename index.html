@@ -623,6 +623,7 @@ s.old{color:var(--muted);font-size:.6em;font-weight:500;margin-left:4px}
 .pl-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .pl-list li{display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
 .pl-list input[type=text]{flex:1;min-width:0}
+.pl-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pl-list small{color:var(--muted);white-space:nowrap}
 .pl-list li{flex-wrap:wrap}
 .pl-list [data-plredraw]{margin-left:auto;padding:4px 8px}
@@ -3805,6 +3806,7 @@ async function planoRead(){
   if(!rooms.length){ PL.step="img"; PL.err="No he encontrado estancias en la imagen. Prueba con una captura más nítida o cálcalo a mano."; planoRender(); return; }
   PL.off=new Set(); PL.rooms=rooms; PL.step="result"; planoRender();
 }
+const plName=e=>(PL.free&&PL.labs?.find(l=>l.room===e.i)?.t)||e.nombre;
 // Lápiz y papelera arriba a la derecha de un número del plano
 function plIconsSVG(x,y,fs,editAttr,delAttr){
   const r=fs*.8, ex=x+fs*1.5, dx=x+fs*3.2, cy=y-fs*1.05;
@@ -3849,7 +3851,7 @@ async function planoCreate(redraw){
     let rid=null;
     let nh=0;
     for(const e of sel){ const id=uid(), {W,L}=bbox(e.Q); first ||= id; if(e.i===redraw) rid=id;
-      await save("estancias",id,{proyectoId:pid,nombre:($("pl_n"+e.i)?.value||"").trim()||e.nombre,ancho:W,largo:L,alto:250,puntos:e.Q.map(([x,y])=>({x,y})),calco:{plano:1,x:-e.mx,y:-e.my,w:bg.w,l:bg.l},creado:Date.now()+(n++)});
+      await save("estancias",id,{proyectoId:pid,nombre:plName(e),ancho:W,largo:L,alto:250,puntos:e.Q.map(([x,y])=>({x,y})),calco:{plano:1,x:-e.mx,y:-e.my,w:bg.w,l:bg.l},creado:Date.now()+(n++)});
       if(PL.free&&PL.ctx){ let ops=[]; try{ ops=detectOpenings(PL.ctx,e.P); }catch{} for(const it of openingItems(id,e.Q,ops)){ await save("items",uid(),it).catch(()=>{}); nh++; } } }
     PL.holesMade=nh;
     $("dlgPlano").close(); S.view="proyecto"; S.tab="plano"; S.vista="2d"; S.roomId=rid||first; S.editShape=false;
@@ -4191,8 +4193,11 @@ function rdOverlay(){
 }
 function rdFinish(){
   const P=PL.rd?.pts||[]; if(P.length<3){ toast("Pon al menos tres esquinas."); return; }
-  const e=PL.rooms.find(x=>x.i===PL.rd.i); if(e){ const [n]=roomsToCm([{nombre:e.nombre,m2:e.m2,P:P.map(p=>[...p])}]); Object.assign(e,{P:n.P,Q:n.Q,mx:n.mx,my:n.my,area:n.area,dudosa:false}); PL.off?.delete(e.i); }
-  PL.rd=null; PL.step="result"; planoRender(); toast("Estancia redibujada. Revisa las demás y pulsa «Crear las estancias».");
+  const e=PL.rooms.find(x=>x.i===PL.rd.i), nm=(PL.rd.name||"").trim(), moved=JSON.stringify(P)!==PL.rd.orig;
+  if(e){ if(moved){ const [n]=roomsToCm([{nombre:e.nombre,m2:e.m2,P:P.map(p=>[...p])}]); Object.assign(e,{P:n.P,Q:n.Q,mx:n.mx,my:n.my,area:n.area,dudosa:false}); }
+    if(nm){ e.nombre=nm; if(PL.free){ const L=plLabs(), en=L.find(l=>l.room===e.i); if(en){ en.t=nm; en.ocr=false; } else { const xs=P.map(p=>p[0]), ys=P.map(p=>p[1]); L.push({room:e.i,x:(Math.min(...xs)+Math.max(...xs))/2,y:(Math.min(...ys)+Math.max(...ys))/2,t:nm,ocr:false}); } } }
+    PL.off?.delete(e.i); }
+  PL.rd=null; PL.step="result"; planoRender(); toast(moved?"Estancia corregida. Revisa las demás y pulsa «Crear las estancias».":"Nombre guardado.");
 }
 // Prueba varios anchos de puerta y tonos de pared (también paredes gris claro) y se queda con lo que separa más habitaciones
 function bestDetect(){
@@ -4296,16 +4301,17 @@ function planoRender0(){
     const R=PL.rooms, fs=Math.max(14,PL.w/45), NUM=new Map(R.map((e,k)=>[e.i,k+1])), poly=R.map(e=>{ const c=PL_COL[e.i%PL_COL.length], on=!PL.off?.has(e.i), xs=e.P.map(p=>p[0]), ys=e.P.map(p=>p[1]), mx=(Math.min(...xs)+Math.max(...xs))/2, my=(Math.min(...ys)+Math.max(...ys))/2;
       return `<g data-plr="${e.i}" style="cursor:pointer" opacity="${on?1:.3}"><polygon points="${e.P.map(q=>q.join(",")).join(" ")}" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="${Math.max(2,PL.w/400)}"/><circle cx="${mx}" cy="${my}" r="${fs*.8}" fill="${c}"/><text x="${mx}" y="${my}" dy=".35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="#fff">${NUM.get(e.i)}</text>${PL.free?plIconsSVG(mx,my,fs,`data-plredraw="${e.i}"`,`data-plrdel="${e.i}"`):""}</g>`; }).join("");
     B.innerHTML=`${err}${PL.free&&PL.whole?modeSeg():""}${planoSVG(poly)}
-      <p>He encontrado <b>${R.length} estancia${R.length>1?"s":""}</b>. ${PL.free?`Ponles nombre (el número coincide con el del plano) y quita las que sobren: pulsa una en el plano para marcarla o desmarcarla.${PL.rooms.some(e=>e.dudosa)?" Las desmarcadas parecen espacios de fuera de la casa.":""}`:"Quita las que no quieras y cambia el nombre si hace falta."}${PL.noScale?" <b>No he podido sacar la escala</b>: revisa las medidas después.":""}</p>
-      <ul class="pl-list">${R.map(e=>{ const {W,L}=bbox(e.Q); return `<li><input type="checkbox" id="pl_on${e.i}"${PL.off?.has(e.i)?"":" checked"} aria-label="Crear ${esc(e.nombre)}"><span class="pl-sw pl-num" style="background:${PL_COL[e.i%PL_COL.length]}">${NUM.get(e.i)}</span><input type="text" id="pl_n${e.i}" value="${esc((PL.free&&plLabs().find(l=>l.room===e.i)?.t)||e.nombre)}"><small>${cm(W)}×${cm(L)} cm · ${m2(e.area)} m²${e.m2?` (plano: ${m2(e.m2)})`:""}</small><button class="btn ghost sm" type="button" data-plredraw="${e.i}" title="Dibujar esta a mano encima del plano">✏️ Dibujarla yo</button><button class="icon-btn sm danger" type="button" data-plrdel="${e.i}" title="Quitar esta estancia" aria-label="Quitar ${esc(e.nombre)}">🗑</button></li>`; }).join("")}</ul>
-      <p class="muted" style="font-size:12px;margin:0">¿Hay una que no ha salido bien? Pulsa su «✏️ Dibujarla yo», dibújala encima del plano y al pulsar «Listo» vuelves a esta lista.</p>
+      <p>He encontrado <b>${R.length} estancia${R.length>1?"s":""}</b>. ${PL.free?`Pulsa ✏️ para ponerles nombre o corregirlas y 🗑 para quitar las que sobren (el número coincide con el del plano).${PL.rooms.some(e=>e.dudosa)?" Las desmarcadas parecen espacios de fuera de la casa.":""}`:"Quita las que no quieras y cambia el nombre si hace falta."}${PL.noScale?" <b>No he podido sacar la escala</b>: revisa las medidas después.":""}</p>
+      <ul class="pl-list">${R.map(e=>{ const {W,L}=bbox(e.Q); return `<li><input type="checkbox" id="pl_on${e.i}"${PL.off?.has(e.i)?"":" checked"} aria-label="Crear ${esc(e.nombre)}"><span class="pl-sw pl-num" style="background:${PL_COL[e.i%PL_COL.length]}">${NUM.get(e.i)}</span><b class="pl-name">${esc(plName(e))}</b><small>${cm(W)}×${cm(L)} cm · ${m2(e.area)} m²${e.m2?` (plano: ${m2(e.m2)})`:""}</small><button class="btn ghost sm" type="button" data-plredraw="${e.i}" title="Cambiar el nombre o la forma">✏️ Editar</button><button class="icon-btn sm danger" type="button" data-plrdel="${e.i}" title="Quitar esta estancia" aria-label="Quitar ${esc(e.nombre)}">🗑</button></li>`; }).join("")}</ul>
+      <p class="muted" style="font-size:12px;margin:0">Para cambiar el nombre o corregir la forma de una, pulsa su ✏️ (en el plano o en la lista). Al pulsar «Listo» vuelves aquí.</p>
       ${dest}<div class="pl-acts"><button class="btn primary" type="button" data-pl="create">Crear las estancias</button>${PL.free?`<button class="btn" type="button" data-pl="trace">✏️ Mejor las dibujo yo</button><button class="btn ghost sm" type="button" data-pl="cal">Cambiar la escala</button>`:`<button class="btn" type="button" data-pl="cal">✏️ Mejor calcar a mano</button>`}</div>
       <p class="muted" style="font-size:12px">Las formas son aproximadas: después pulsa una medida azul en «Editar estancia» para ajustarla con lo que midas.</p>`; return; }
   if(PL.step==="redraw"){
     const e=PL.rooms.find(x=>x.i===PL.rd.i), pts=PL.rd.pts, closed=PL.rd.closed;
-    B.innerHTML=`${err}<p><b>Dibuja «${esc(PL.rd.name||e?.nombre||"la estancia")}»:</b> ${closed?`ya está cerrada. <b>Arrastra cualquier punto</b> para corregirlo y pulsa «Listo» cuando esté bien.`:`toca cada esquina por dentro de sus paredes. El punto va donde toques y se imanta a la esquina o pared del plano más cercana. Para cerrarla, toca el punto <b style="color:#2F855A">verde</b>; luego aún podrás corregir los puntos arrastrándolos.`} Acércate con los dedos, la rueda o Ctrl + para afinar.</p>
+    B.innerHTML=`${err}<div class="pl-acts"><label for="rd_name" style="font-weight:700">Nombre</label><input id="rd_name" type="text" value="${esc(PL.rd.name||"")}" placeholder="Salón, Dormitorio 1…" style="flex:1;min-width:0"></div>
+      <p>${closed?`<b>Arrastra cualquier punto</b> para corregir la forma y pulsa «Listo» cuando esté bien.`:`toca cada esquina por dentro de sus paredes. El punto va donde toques y se imanta a la esquina o pared del plano más cercana. Para cerrarla, toca el punto <b style="color:#2F855A">verde</b>; luego aún podrás corregir los puntos arrastrándolos.`} Acércate con los dedos, la rueda o Ctrl + para afinar.</p>
       ${planoSVG(rdOverlay(),"cal")}
-      <div class="pl-acts">${closed?`<button class="btn primary" type="button" data-pl="rdDone">Listo</button><button class="btn" type="button" data-pl="rdOpen">Seguir añadiendo puntos</button>`:`<button class="btn primary" type="button" data-pl="rdClose"${pts.length<3?" disabled":""}>Cerrar la forma</button><button class="btn" type="button" data-pl="rdUndo"${pts.length?"":" disabled"}>↶ Quitar el último punto</button>`}<button class="btn ghost sm" type="button" data-pl="rdCancel">Cancelar</button></div>`; return; }
+      <div class="pl-acts">${closed?`<button class="btn primary" type="button" data-pl="rdDone">Listo</button><button class="btn" type="button" data-pl="rdOpen">Seguir añadiendo puntos</button><button class="btn ghost sm" type="button" data-pl="rdClear">🗑 Borrar la forma y dibujarla de cero</button>`:`<button class="btn primary" type="button" data-pl="rdClose"${pts.length<3?" disabled":""}>Cerrar la forma</button><button class="btn" type="button" data-pl="rdUndo"${pts.length?"":" disabled"}>↶ Quitar el último punto</button>`}<button class="btn ghost sm" type="button" data-pl="rdCancel">Cancelar</button></div>`; return; }
   if(PL.step==="cal"){
     const [a,b]=PL.cal||[];
     B.innerHTML=`${err}<p><b>1 ·</b> Pincha los dos extremos de algo cuya medida sepas: la barra de escala (por ejemplo de 0 a 5 m) o una cota del plano. Acércate para hacerlo exacto; si un punto no ha quedado bien, arrástralo.</p>
@@ -4315,6 +4321,7 @@ function planoRender0(){
 }
 $("planoBody").addEventListener("input",e=>{ const id=e.target.id||""; let m;
   if(id==="pl_rname") PL.rname=e.target.value;
+  else if(id==="rd_name"&&PL.rd) PL.rd.name=e.target.value;
   else if((m=/^pl_l(\d+)$/.exec(id))){ const l=plLabs()[+m[1]]; if(l){ l.t=e.target.value; l.ocr=false; } }
   else if((m=/^pl_n(\d+)$/.exec(id))&&PL.free){ const l=plLabs().find(x=>x.room===+m[1]); if(l){ l.t=e.target.value; l.ocr=false; } } });
 $("planoBody").addEventListener("change",e=>{ const m=/^pl_on(\d+)$/.exec(e.target.id||""); if(m){ PL.off ||= new Set(); e.target.checked?PL.off.delete(+m[1]):PL.off.add(+m[1]); const g=document.querySelector(`[data-plr="${m[1]}"]`); if(g) g.setAttribute("opacity",e.target.checked?1:.3); } if(e.target.id==="pl_file") planoFile(e.target.files[0]); if(e.target.id==="pl_cm") PL.calCm=+e.target.value||500; });
@@ -4324,7 +4331,7 @@ $("planoBody").addEventListener("click",e=>{
   if(rdel&&!PL.dragged){ const i=+rdel.dataset.plrdel, e0=PL.rooms.find(x=>x.i===i); PL.rooms=PL.rooms.filter(x=>x.i!==i); if(PL.labs) PL.labs=PL.labs.filter(l=>l.room!==i); PL.off?.delete(i); planoRender(); toast(`«${e0?.nombre||"Estancia"}» quitada de la lista`); return; }
   const led=e.target.closest("[data-pllabed]"); if(led&&!PL.dragged){ const f=$("pl_l"+led.dataset.pllabed); f?.scrollIntoView({block:"center",behavior:"smooth"}); f?.focus(); f?.select(); return; }
   const ldel=e.target.closest("[data-pllabdel]"); if(ldel&&!PL.dragged){ const L=plLabs(), i=+ldel.dataset.pllabdel; L.splice(i,1); planoRender(); return; }
-  const rd=e.target.closest("[data-plredraw]"); if(rd){ PL.rd={i:+rd.dataset.plredraw,pts:[],name:($("pl_n"+rd.dataset.plredraw)?.value||"").trim()}; PL.step="redraw"; PL.err=""; planoRender(); return; }
+  const rd=e.target.closest("[data-plredraw]"); if(rd){ const e0=PL.rooms.find(x=>x.i===+rd.dataset.plredraw); if(!e0) return; PL.rd={i:e0.i,pts:e0.P.map(p=>[...p]),closed:true,name:plName(e0),orig:JSON.stringify(e0.P)}; PL.step="redraw"; PL.err=""; planoRender(); return; }
   const pm=e.target.closest("[data-plmode]"); if(pm){ PL.mode=pm.dataset.plmode; planoRender(); return; }
   const zb=e.target.closest("[data-plz]");
   if(zb){ const k=zb.dataset.plz; if(k==="fit"){ PL.z=1; plApply(); } else plZoom(k==="in"?1.6:1/1.6); return; }
@@ -4338,6 +4345,7 @@ $("planoBody").addEventListener("click",e=>{
     else if(a==="rdUndo"){ PL.rd?.pts.pop(); planoRender(); }
     else if(a==="rdClose"){ if(PL.rd&&PL.rd.pts.length>=3){ PL.rd.closed=true; planoRender(); } }
     else if(a==="rdOpen"){ if(PL.rd){ PL.rd.closed=false; planoRender(); } }
+    else if(a==="rdClear"){ if(PL.rd){ PL.rd.pts=[]; PL.rd.closed=false; planoRender(); } }
     else if(a==="rdCancel"){ PL.rd=null; PL.step="result"; planoRender(); }
     else if(a==="rdDone") rdFinish();
     else if(a==="back"){ PL.step=PL.rooms?"result":"img"; planoRender(); }
