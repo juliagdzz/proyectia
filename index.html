@@ -1076,6 +1076,12 @@ function record(col,id,prev,next){
 // Agrupa todo lo que se guarda durante fn en un solo paso de «Atrás»
 async function held(fn){ S.histGroup=null; S.histHeld=(S.histHeld||0)+1; try{ return await fn(); } finally{ S.histHeld--; } }
 function holdHist(ms=1500){ S.histGroup=null; S.histHoldUntil=Date.now()+ms; }
+// Deshacer: si estás dibujando quita el último punto; si no, el último cambio guardado
+function undoCtx(){
+  if(S.editShape&&S.wallDraw){ if(S.wallDraw.pts.length) S.wallDraw.pts.pop(); else S.wallDraw=null; render(); return; }
+  if(S.editShape&&S.drawMode){ if((S.drawPts||[]).length){ S.drawPts.pop(); S.drawSel=null; render(); } else toast("No hay puntos que quitar. Pulsa «Cancelar» para salir sin cambios."); return; }
+  undo();
+}
 function undo(){
   const g=S.hist.pop(); if(!g){ toast("No hay nada que deshacer."); return; }
   S.undoing=true;
@@ -1446,7 +1452,7 @@ function render(){
   const p=proyecto(); S.proyId=p?.id||null;
   $("projMenuP").innerHTML=projMenuHTML(); $("btnUndo").disabled=!S.hist.length;
   // en el plano, «Deshacer» va en la esquina del plano; en el resto de pestañas, flotando abajo
-  $("undoFab").hidden=!S.hist.length||(S.view!=="presupuestos"&&S.view!=="proyectos"&&S.tab==="plano"&&!!S.proyectos.length&&!S.editShape);
+  $("undoFab").hidden=!S.hist.length||(S.view!=="presupuestos"&&S.view!=="proyectos"&&S.tab==="plano"&&!!S.proyectos.length);
   { const nd=S.productos.filter(x=>dropOf(x)), un=nd.filter(x=>!x.bajadaVista).length; $("btnBell").hidden=true; paintAvatar(); $("bellN").textContent=un||""; $("bellN").hidden=!un; }
   if(S.view==="presupuestos"&&S.proyectos.length){ main.innerHTML=allBudgetsHTML(); return; }
   if(S.view==="proyectos"&&S.proyectos.length){ main.innerHTML=myProjectsHTML(); return; }
@@ -1641,7 +1647,9 @@ function shapeHandlesSVG(P,hs){
 }
 // Punto de la pared i más cercano a (x,y), redondeado a 5 cm
 function projSeg(P,i,x,y){ const p=P[i], q=P[(i+1)%P.length], dx=q[0]-p[0], dy=q[1]-p[1], L2=dx*dx+dy*dy||1, t=Math.max(.02,Math.min(.98,((x-p[0])*dx+(y-p[1])*dy)/L2));
-  return [Math.round((p[0]+dx*t)/5)*5,Math.round((p[1]+dy*t)/5)*5]; }
+  const st=gridStep(5); return [Math.round((p[0]+dx*t)/st)*st,Math.round((p[1]+dy*t)/st)*st]; }
+// Cuadrícula de enganche: más fina cuanto más acercas
+function gridStep(base){ const z=S.zoom||1; return z>=6?1:z>=3?Math.min(base,2):z>=1.6?Math.min(base,5):base; }
 // Dibujar la forma pinchando las esquinas (como en los Sims): paredes rectas y medidas al momento
 function drawBgSVG(D){ const g=[]; for(let x=0;x<=D;x+=50) g.push(`M${x} 0V${D}`); for(let y=0;y<=D;y+=50) g.push(`M0 ${y}H${D}`); return `<rect x="0" y="0" width="${D}" height="${D}" fill="var(--floor)"/><path d="${g.join("")}" stroke="var(--grid)" stroke-width="1"/>`; }
 function drawLayerSVG(D,hs,prev){
@@ -1653,7 +1661,7 @@ function drawLayerSVG(D,hs,prev){
   if(pts0.length>=3&&!prev) out+=`<line x1="${pts0[pts0.length-1][0]}" y1="${pts0[pts0.length-1][1]}" x2="${pts0[0][0]}" y2="${pts0[0][1]}" stroke="var(--wall)" stroke-opacity=".35" stroke-width="5" stroke-dasharray="8 8"/>`;
   if(prev&&pts0.length) out+=seg(pts0[pts0.length-1],prev,1);
   const last=pts0.length-1;
-  out+=pts0.map((p,i)=>`<g data-dpt="${i}" style="cursor:pointer"><circle cx="${p[0]}" cy="${p[1]}" r="${hs*2.2}" fill="transparent"/><circle cx="${p[0]}" cy="${p[1]}" r="${i===0?hs*1.5:i===last?hs*1.2:hs*.9}" fill="${i===0?"var(--ok)":i===last?"var(--red)":"var(--wall)"}" stroke="${S.drawSel===i?"var(--blue-ink)":"#fff"}" stroke-width="${S.drawSel===i?hs*.6:hs*.3}"/></g>`).join("");
+  out+=pts0.map((p,i)=>`<g data-dpt="${i}" style="cursor:pointer"><circle cx="${p[0]}" cy="${p[1]}" r="${hs*1.2}" fill="transparent"/><circle cx="${p[0]}" cy="${p[1]}" r="${i===0?hs*1.5:i===last?hs*1.2:hs*.9}" fill="${i===0?"var(--ok)":i===last?"var(--red)":"var(--wall)"}" stroke="${S.drawSel===i?"var(--blue-ink)":"#fff"}" stroke-width="${S.drawSel===i?hs*.6:hs*.3}"/></g>`).join("");
   if(prev) out+=`<circle cx="${prev[0]}" cy="${prev[1]}" r="${hs*.7}" fill="var(--red)" pointer-events="none"/>`;
   return out;
 }
@@ -1661,14 +1669,14 @@ function bindDraw(r){
   const svg=$("plan"); if(!svg) return; const hs=+svg.dataset.hs, D=+svg.dataset.d;
   const toCm=e=>{const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;return pt.matrixTransform(svg.getScreenCTM().inverse())};
   const G=planoGuide(r), o=S.drawOff||{x:0,y:0};
-  const snap=e=>{ const c=toCm(e), P=S.drawPts||[]; let x=Math.round(c.x/10)*10, y=Math.round(c.y/10)*10;
+  const snap=e=>{ const c=toCm(e), P=S.drawPts||[], st=gridStep(10); let x=Math.round(c.x/st)*st, y=Math.round(c.y/st)*st;
     if(G?.M){ const f=guideSnap(G,r.calco,c.x-o.x,c.y-o.y,hs*2.6); if(f.x!=null) x=f.x+o.x; if(f.y!=null) y=f.y+o.y; }
     x=Math.max(0,Math.min(D,x)); y=Math.max(0,Math.min(D,y));
     if(P.length){ const l=P[P.length-1], dx=Math.abs(x-l[0]), dy=Math.abs(y-l[1]); if(dx<dy*.35) x=l[0]; else if(dy<dx*.35) y=l[1];
-      const f=P[0]; if(P.length>=3&&Math.hypot(x-f[0],y-f[1])<hs*3) return [...f];
-      if(Math.abs(x-f[0])<hs*1.2) x=f[0]; if(Math.abs(y-f[1])<hs*1.2) y=f[1]; }
-    for(const q of S.drawRef||[]){ if(Math.hypot(x-q[0],y-q[1])<hs*2.2) return [...q]; }
-    for(const q of S.drawRef||[]){ if(Math.abs(x-q[0])<hs) x=q[0]; if(Math.abs(y-q[1])<hs) y=q[1]; }
+      const f=P[0]; if(P.length>=3&&Math.hypot(x-f[0],y-f[1])<hs*1.5) return [...f];
+      if(Math.abs(x-f[0])<hs*.7) x=f[0]; if(Math.abs(y-f[1])<hs*.7) y=f[1]; }
+    for(const q of S.drawRef||[]){ if(Math.hypot(x-q[0],y-q[1])<hs*1.3) return [...q]; }
+    for(const q of S.drawRef||[]){ if(Math.abs(x-q[0])<hs*.7) x=q[0]; if(Math.abs(y-q[1])<hs*.7) y=q[1]; }
     return [x,y]; };
   const paint=prev=>{ $("drawLayer").innerHTML=drawLayerSVG(D,hs,prev); };
   let down=null; const ptr=new Set();
@@ -1985,8 +1993,8 @@ function bindShape(r){
   svg.addEventListener("pointermove",e=>{
     if(!drag){ const sh=$("segHover"), sgl=e.target.closest?.("[data-seg]"); if(sh){ if(sgl){ const c=toCm(e), q=projSeg(pts(r),+sgl.dataset.seg,c.x,c.y); sh.setAttribute("transform",`translate(${q[0]} ${q[1]})`); sh.style.display=""; } else sh.style.display="none"; } return; }
     const c=toCm(e), P=drag.P, n=P.length;
-    let x=Math.round(c.x/5)*5, y=Math.round(c.y/5)*5;
-    for(const o of [P[(drag.i-1+n)%n],P[(drag.i+1)%n]]){ if(Math.abs(x-o[0])<12) x=o[0]; if(Math.abs(y-o[1])<12) y=o[1]; }
+    const st=gridStep(5); let x=Math.round(c.x/st)*st, y=Math.round(c.y/st)*st;
+    for(const o of [P[(drag.i-1+n)%n],P[(drag.i+1)%n]]){ if(Math.abs(x-o[0])<Math.min(12,hs*.7)) x=o[0]; if(Math.abs(y-o[1])<Math.min(12,hs*.7)) y=o[1]; }
     if(x===P[drag.i][0]&&y===P[drag.i][1]) return;
     P[drag.i]=[x,y]; drag.moved=true; S.tmpPts={id:r.id,P}; redraw(P);
   });
@@ -2015,7 +2023,7 @@ function planHTML(p,r){
   return `<div class="toolbar">${chips}<div class="tb-right">${es?"":`<button class="btn primary sm" type="button" data-act="newProdHere">＋ Crear producto</button>`}<div class="seg" role="group" aria-label="Vista"><button type="button" data-vista="2d" aria-pressed="${!v3}">2D</button><button type="button" data-vista="3d" aria-pressed="${v3}">3D</button></div>${es?"":`<button class="btn sm pal${S.paint?" on":""}" type="button" data-act="finishes" title="Color y material de paredes y suelo"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.9 1.8-1.9 0-.5-.2-.9-.5-1.3-.3-.3-.5-.8-.5-1.3 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.3" fill="#F86C2F" stroke="none"/><circle cx="10" cy="7" r="1.3" fill="#8DB6C7" stroke="none"/><circle cx="14.5" cy="7" r="1.3" fill="#6D0101" stroke="none"/><circle cx="17.5" cy="10.5" r="1.3" fill="#9DAF8A" stroke="none"/></svg><span>Paredes y suelo</span></button><button class="btn sm room-btn" type="button" data-act="editShape" title="Medidas, paredes, vigas y columnas de la estancia"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V3h18v18z"/><path d="M3 9h6V3M15 21v-6h6"/></svg><span>Editar estancia</span></button>`}</div></div>
   <div class="planner">
     <div class="plan-main"><div class="canvas${es?" ed":""}">
-      ${es&&!v3?`<div class="plan-tools"><button class="pt-btn" type="button" data-zoom="1.6" title="Acercar">＋</button><button class="pt-btn" type="button" data-zoom="0.625" title="Alejar"${Z<=1?" disabled":""}>－</button>${Z>1?`<button class="pt-btn" type="button" data-zoom="0" title="Ver la estancia entera">⤢ Ver todo</button>`:""}<span class="pt-note">Rueda del ratón o pellizca para acercar · arrastra el fondo para moverte</span></div>`:""}
+      ${es&&!v3?`<div class="plan-tools"><button class="pt-btn" type="button" data-act="undo"${S.hist.length||(S.drawMode&&(S.drawPts||[]).length)||(S.wallDraw?.pts.length)?"":" disabled"} title="Deshacer (Ctrl+Z)"><span aria-hidden="true">↶</span> Deshacer</button><button class="pt-btn" type="button" data-zoom="1.6" title="Acercar">＋</button><button class="pt-btn" type="button" data-zoom="0.625" title="Alejar"${Z<=1?" disabled":""}>－</button>${Z>1?`<button class="pt-btn" type="button" data-zoom="0" title="Ver la estancia entera">⤢ Ver todo</button>`:""}<span class="pt-note">Rueda del ratón o pellizca para acercar · arrastra el fondo para moverte</span></div>`:""}
       ${es?"":`<div class="plan-tools"><button class="pt-btn" type="button" data-act="undo"${S.hist.length?"":" disabled"} title="Deshacer el último cambio (Ctrl+Z)"><span aria-hidden="true">↶</span> Deshacer</button><button class="pt-btn${S.human?" on":""}" type="button" data-act="human" title="Ver si cabes: distancias para pasar y vista a la altura de los ojos"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2.5"/><path d="M12 8v7M8 10.5l4-1.5 4 1.5M9.5 22l2.5-7 2.5 7"/></svg><span>Persona</span></button><button class="pt-btn${S.dims?" on":""}" type="button" data-act="dims" title="Mostrar las medidas: espacio libre entre muebles y paredes"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17 17 3l4 4L7 21z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/></svg><span>Medidas</span></button>${S.human&&v3?`<div class="seg pt-seg" role="group" aria-label="Cómo te ves"><button type="button" data-hview="1" aria-pressed="${S.hview==="1"}">👁 1ª persona</button><button type="button" data-hview="3" aria-pressed="${S.hview!=="1"}">🧍‍♀️ 3ª persona</button></div>`:""}${(()=>{ const n=items.filter(i=>i.bloq).length; return n>1?`<button class="pt-btn" type="button" data-act="unlockAll" title="Desbloquear todos los muebles bloqueados de esta estancia">${UNLOCK_SVG}<span>Desbloquear (${n})</span></button>`:""; })()}</div>`}
       ${v3?`<div id="view3d"></div><span class="hint">Arrastra el fondo para girar la vista · pellizca o usa la rueda para acercar · arrastra un mueble para moverlo</span>`:`<svg id="plan" data-pad="${pad}" data-hs="${hs}" data-d="${DR}" viewBox="${VB.join(" ")}" data-z="${Z}" role="img" aria-label="Plano de ${esc(r.nombre)}">
         <g id="roomGeom">${S.drawMode&&es?drawBgSVG(DR):roomGeomSVG(P,pad,r.sueloColor||DEF_FIN.sueloColor,{r,edit:es,paint:S.paint&&!es,z:Z})}</g>${es&&S.drawMode&&r.calco?.plano&&planoGuide(r)?.url?`<g id="guide" pointer-events="none"${S.drawOff?` transform="translate(${S.drawOff.x} ${S.drawOff.y})"`:""}><image href="${planoGuide(r).url}" x="${+r.calco.x||0}" y="${+r.calco.y||0}" width="${r.calco.w}" height="${r.calco.l}" preserveAspectRatio="none"/></g>`:""}${(r.etiquetas||[]).length&&!(es&&S.drawMode)?`<g id="labLayer">${labelsSVG(r,es,W,L)}</g>`:""}${r.calco&&(!r.calco.plano||es)?`<g id="calco" opacity="${r.calco.plano?.5:.55}" pointer-events="none"${r.calco.plano?' style="mix-blend-mode:multiply"':""}${es&&S.drawMode&&S.drawOff?` transform="translate(${S.drawOff.x} ${S.drawOff.y})"`:""}>${calcoSVG(r.calco,r)}</g>`:""}
@@ -3976,12 +3984,12 @@ function labelsSVG(r,es,W,L){
 /* ---------- Dibujar pared sobre la vista normal de la estancia ---------- */
 // Punto más cercano: esquina, sobre una pared, o libre (recto respecto al anterior y pegado a las paredes del plano de fondo)
 function wdSnap(r,P,c,hs){
-  const R=hs*2.2, W=S.wallDraw, prev=W.pts[W.pts.length-1];
-  for(const [i,v] of P.entries()) if(Math.hypot(c.x-v[0],c.y-v[1])<R) return {x:v[0],y:v[1],wall:i,u:i};
-  let x=Math.round(c.x/5)*5, y=Math.round(c.y/5)*5, lock=null;
+  const R=hs*1.5, W=S.wallDraw, prev=W.pts[W.pts.length-1], st=gridStep(5);
+  for(const [i,v] of P.entries()) if(Math.hypot(c.x-v[0],c.y-v[1])<hs*1.1) return {x:v[0],y:v[1],wall:i,u:i};
+  let x=Math.round(c.x/st)*st, y=Math.round(c.y/st)*st, lock=null;
   const G=r.calco?.plano?planoGuide(r):null; if(G?.M){ const f=guideSnap(G,r.calco,c.x,c.y,R); if(f.x!=null) x=f.x; if(f.y!=null) y=f.y; }
   // alineado con las esquinas que ya hay
-  let ax=null, ay=null; for(const v of P){ if(Math.abs(c.x-v[0])<R&&(ax==null||Math.abs(c.x-v[0])<Math.abs(c.x-ax))) ax=v[0]; if(Math.abs(c.y-v[1])<R&&(ay==null||Math.abs(c.y-v[1])<Math.abs(c.y-ay))) ay=v[1]; }
+  let ax=null, ay=null; for(const v of P){ if(Math.abs(c.x-v[0])<hs*.7&&(ax==null||Math.abs(c.x-v[0])<Math.abs(c.x-ax))) ax=v[0]; if(Math.abs(c.y-v[1])<hs*.7&&(ay==null||Math.abs(c.y-v[1])<Math.abs(c.y-ay))) ay=v[1]; }
   if(ax!=null) x=ax; if(ay!=null) y=ay;
   if(prev){ const dx=Math.abs(c.x-prev.x), dy=Math.abs(c.y-prev.y); if(dx<dy*.4){ x=prev.x; lock="v"; } else if(dy<dx*.4){ y=prev.y; lock="h"; } }
   // ¿cae sobre una pared?
@@ -4017,7 +4025,7 @@ function bindWallDraw(r,svg,toCm,hs){
   svg.addEventListener("pointercancel",e=>{ ptr.delete(e.pointerId); down=null; });
   svg.addEventListener("pointerup",e=>{ ptr.delete(e.pointerId); const d=down; down=null; if(!d||S.pinching) return; if(d.moved){ render(); return; }
     const W=S.wallDraw, p=wdSnap(r,P,toCm(d.e),hs), l=W.pts[W.pts.length-1];
-    if(l&&Math.hypot(l.x-p.x,l.y-p.y)<hs*1.2){ if(W.pts.length>=2) wallDrawFinish(r,true); return; }
+    if(l&&Math.hypot(l.x-p.x,l.y-p.y)<hs*.6){ if(W.pts.length>=2) wallDrawFinish(r,true); return; }
     W.pts.push(p);
     if(W.pts.length>=2&&p.wall!=null&&W.pts[0].wall!=null){ wallDrawFinish(r,false); return; }
     render(); });
@@ -4071,6 +4079,19 @@ function dpClosed(P,eps){
   const A=dp(P.slice(ia,ib+1)), B=dp([...P.slice(ib),P[0]]);
   return [...A.slice(0,-1),...B.slice(0,-1)];
 }
+// Dibujar a mano una estancia dentro del diálogo: puntos rectos y pegados a las paredes de la imagen
+function rdSnap(svg,q){
+  const P=PL.rd.pts, R=16/svg.getScreenCTM().a, prev=P[P.length-1], f0=P[0]; let x=q.x, y=q.y;
+  const C=PL.ctx; if(C){ const f=guideSnap({M:C.M,w:C.w,h:C.h,kw:1/C.s},{x:0,y:0,w:PL.w,l:PL.h},x,y,R); if(f.x!=null) x=f.x; if(f.y!=null) y=f.y; }
+  if(prev){ const dx=Math.abs(x-prev[0]), dy=Math.abs(y-prev[1]); if(dx<dy*.35) x=prev[0]; else if(dy<dx*.35) y=prev[1]; }
+  if(f0&&P.length>=2){ if(Math.abs(x-f0[0])<R*.6) x=f0[0]; if(Math.abs(y-f0[1])<R*.6) y=f0[1]; }
+  return [Math.round(x*10)/10,Math.round(y*10)/10];
+}
+function rdFinish(){
+  const P=PL.rd?.pts||[]; if(P.length<3){ toast("Pon al menos tres esquinas."); return; }
+  const e=PL.rooms.find(x=>x.i===PL.rd.i); if(e){ const [n]=roomsToCm([{nombre:e.nombre,m2:e.m2,P:orthoPoly(P)}]); Object.assign(e,{P:n.P,Q:n.Q,mx:n.mx,my:n.my,area:n.area,dudosa:false}); PL.off?.delete(e.i); }
+  PL.rd=null; PL.step="result"; planoRender(); toast("Estancia redibujada. Revisa las demás y pulsa «Crear las estancias».");
+}
 function planoScale(){
   const [a,b]=PL.cal||[], cmv=+($("pl_cm")?.value||PL.calCm||0), d=a&&b?Math.hypot(b[0]-a[0],b[1]-a[1]):0;
   if(!(d>3)){ toast("Pincha dos puntos del plano."); return false; }
@@ -4088,7 +4109,7 @@ function planoDetect(){
       W=E.ctx?detectWhole(E.ctx):null; }catch(e){ E=[]; }
     PL.noScale=false;
     if(!E.length&&!W){ PL.step="cal"; PL.err="No he encontrado las paredes. Comprueba la escala o dibújalo tú con «Dibujarlas yo»."; planoRender(); return; }
-    PL.rooms=roomsToCm(E); PL.whole=W; PL.tabOff=new Set(); PL.mode=PL.mode||(W?"una":"varias"); if(!W) PL.mode="varias"; PL.labs=null; plLabs();
+    PL.rooms=roomsToCm(E); PL.whole=W; PL.tabOff=new Set(); PL.ctx=E.ctx||null; PL.mode=PL.mode||(W?"una":"varias"); if(!W) PL.mode="varias"; PL.labs=null; plLabs();
     PL.off=new Set(PL.rooms.filter(e=>e.dudosa).map(e=>e.i)); PL.step="result"; planoRender();
     const ocr=PL.ocrP?null:plOCR(); (ocr||PL.ocrP).then(ws=>{ plApplyOCR(ws); if(PL.step==="result"){ planoRender(); } });
   },30);
@@ -4122,7 +4143,7 @@ const plZ=()=>PL.z||1;
 function plVB(){ const z=plZ(), w=PL.w/z, h=PL.h/z; let cx=PL.cx??PL.w/2, cy=PL.cy??PL.h/2;
   cx=Math.min(Math.max(cx,w/2),PL.w-w/2); cy=Math.min(Math.max(cy,h/2),PL.h-h/2); PL.cx=cx; PL.cy=cy; return [cx-w/2,cy-h/2,w,h]; }
 function plApply(){ const svg=$("pl_svg"); if(!svg) return; const z=plZ(); svg.setAttribute("viewBox",plVB().join(" "));
-  svg.querySelectorAll("[data-r]").forEach(c=>c.setAttribute("r",+c.dataset.r/z)); svg.style.cursor=PL.step==="cal"?"crosshair":z>1?"grab":"";
+  svg.querySelectorAll("[data-r]").forEach(c=>c.setAttribute("r",+c.dataset.r/z)); svg.style.cursor=PL.step==="cal"||PL.step==="redraw"?"crosshair":z>1?"grab":"";
   const zo=$("pl_zout"); if(zo) zo.disabled=z<=1; const zl=$("pl_zl"); if(zl) zl.textContent=z>1.01?`${Math.round(z*10)/10}×`:""; }
 function plZoom(f,px,py){ const z=plZ(), nz=Math.min(20,Math.max(1,z*f)); if(nz===z) return;
   const cx=PL.cx??PL.w/2, cy=PL.cy??PL.h/2; if(px==null){ px=cx; py=cy; }
@@ -4165,10 +4186,18 @@ function planoRender0(){
       return `<g data-plr="${e.i}" style="cursor:pointer" opacity="${on?1:.3}"><polygon points="${e.P.map(q=>q.join(",")).join(" ")}" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="${Math.max(2,PL.w/400)}"/><circle cx="${mx}" cy="${my}" r="${fs*.8}" fill="${c}"/><text x="${mx}" y="${my}" dy=".35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="#fff">${e.i+1}</text></g>`; }).join("");
     B.innerHTML=`${err}${PL.free&&PL.whole?modeSeg():""}${planoSVG(poly)}
       <p>He encontrado <b>${R.length} estancia${R.length>1?"s":""}</b>. ${PL.free?`Ponles nombre (el número coincide con el del plano) y quita las que sobren: pulsa una en el plano para marcarla o desmarcarla.${PL.rooms.some(e=>e.dudosa)?" Las desmarcadas parecen espacios de fuera de la casa.":""}`:"Quita las que no quieras y cambia el nombre si hace falta."}${PL.noScale?" <b>No he podido sacar la escala</b>: revisa las medidas después.":""}</p>
-      <ul class="pl-list">${R.map(e=>{ const {W,L}=bbox(e.Q); return `<li><input type="checkbox" id="pl_on${e.i}"${PL.off?.has(e.i)?"":" checked"} aria-label="Crear ${esc(e.nombre)}"><span class="pl-sw pl-num" style="background:${PL_COL[e.i%PL_COL.length]}">${e.i+1}</span><input type="text" id="pl_n${e.i}" value="${esc((PL.free&&plLabs().find(l=>l.room===e.i)?.t)||e.nombre)}"><small>${cm(W)}×${cm(L)} cm · ${m2(e.area)} m²${e.m2?` (plano: ${m2(e.m2)})`:""}</small><button class="btn ghost sm" type="button" data-plredraw="${e.i}" title="Crear todas y dibujar esta a mano encima del plano">✏️ Dibujarla yo</button></li>`; }).join("")}</ul>
-      <p class="muted" style="font-size:12px;margin:0">¿Hay una que no ha salido bien? Pulsa su «✏️ Dibujarla yo»: se crean las demás y se abre esa para que la dibujes encima del plano.</p>
+      <ul class="pl-list">${R.map(e=>{ const {W,L}=bbox(e.Q); return `<li><input type="checkbox" id="pl_on${e.i}"${PL.off?.has(e.i)?"":" checked"} aria-label="Crear ${esc(e.nombre)}"><span class="pl-sw pl-num" style="background:${PL_COL[e.i%PL_COL.length]}">${e.i+1}</span><input type="text" id="pl_n${e.i}" value="${esc((PL.free&&plLabs().find(l=>l.room===e.i)?.t)||e.nombre)}"><small>${cm(W)}×${cm(L)} cm · ${m2(e.area)} m²${e.m2?` (plano: ${m2(e.m2)})`:""}</small><button class="btn ghost sm" type="button" data-plredraw="${e.i}" title="Dibujar esta a mano encima del plano">✏️ Dibujarla yo</button></li>`; }).join("")}</ul>
+      <p class="muted" style="font-size:12px;margin:0">¿Hay una que no ha salido bien? Pulsa su «✏️ Dibujarla yo», dibújala encima del plano y al pulsar «Listo» vuelves a esta lista.</p>
       ${dest}<div class="pl-acts"><button class="btn primary" type="button" data-pl="create">Crear las estancias</button>${PL.free?`<button class="btn" type="button" data-pl="trace">✏️ Mejor las dibujo yo</button><button class="btn ghost sm" type="button" data-pl="cal">Cambiar la escala</button>`:`<button class="btn" type="button" data-pl="cal">✏️ Mejor calcar a mano</button>`}</div>
       <p class="muted" style="font-size:12px">Las formas son aproximadas: después pulsa una medida azul en «Editar estancia» para ajustarla con lo que midas.</p>`; return; }
+  if(PL.step==="redraw"){
+    const e=PL.rooms.find(x=>x.i===PL.rd.i), pts=PL.rd.pts, sw=Math.max(2,PL.w/300), z=plZ();
+    const old=e?`<polygon points="${e.P.map(q=>q.join(",")).join(" ")}" fill="#9CA3AF" fill-opacity=".15" stroke="#6B7280" stroke-width="2" stroke-dasharray="6 5" vector-effect="non-scaling-stroke"/>`:"";
+    const line=pts.length>1?`<polyline points="${pts.map(q=>q.join(",")).join(" ")}" fill="none" stroke="#6D0101" stroke-width="3" vector-effect="non-scaling-stroke"/>`:"";
+    const dots=pts.map((q,j)=>`<circle cx="${q[0]}" cy="${q[1]}" data-r="${j?sw*1.6:sw*2.4}" r="${(j?sw*1.6:sw*2.4)/z}" fill="${j?"#6D0101":"#2F855A"}" stroke="#fff" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`).join("");
+    B.innerHTML=`${err}<p><b>Dibuja «${esc(PL.rd.name||e?.nombre||"la estancia")}»:</b> toca cada esquina por dentro de sus paredes; los puntos se pegan a las paredes del plano y salen rectos. Para cerrarla, toca el punto <b style="color:#2F855A">verde</b> o pulsa «Listo». Acércate con los dedos, la rueda o Ctrl + para afinar.</p>
+      ${planoSVG(old+`<g id="pl_rdl">${line}</g>`+dots,"cal")}
+      <div class="pl-acts"><button class="btn primary" type="button" data-pl="rdDone"${pts.length<3?" disabled":""}>Listo</button><button class="btn" type="button" data-pl="rdUndo"${pts.length?"":" disabled"}>↶ Quitar el último punto</button><button class="btn ghost sm" type="button" data-pl="rdCancel">Cancelar</button></div>`; return; }
   if(PL.step==="cal"){
     const [a,b]=PL.cal||[];
     B.innerHTML=`${err}<p><b>1 ·</b> Pincha los dos extremos de algo cuya medida sepas: la barra de escala (por ejemplo de 0 a 5 m) o una cota del plano. Acércate para hacerlo exacto; si un punto no ha quedado bien, arrástralo.</p>
@@ -4183,7 +4212,7 @@ $("planoBody").addEventListener("input",e=>{ const id=e.target.id||""; let m;
 $("planoBody").addEventListener("change",e=>{ const m=/^pl_on(\d+)$/.exec(e.target.id||""); if(m){ PL.off ||= new Set(); e.target.checked?PL.off.delete(+m[1]):PL.off.add(+m[1]); const g=document.querySelector(`[data-plr="${m[1]}"]`); if(g) g.setAttribute("opacity",e.target.checked?1:.3); } if(e.target.id==="pl_file") planoFile(e.target.files[0]); if(e.target.id==="pl_cm") PL.calCm=+e.target.value||500; });
 $("planoBody").addEventListener("click",e=>{
   const tb=e.target.closest("[data-pltab]"); if(tb&&!PL.dragged){ const i=+tb.dataset.pltab; PL.tabOff ||= new Set(); PL.tabOff.has(i)?PL.tabOff.delete(i):PL.tabOff.add(i); planoRender(); return; }
-  const rd=e.target.closest("[data-plredraw]"); if(rd){ planoCreate(+rd.dataset.plredraw); return; }
+  const rd=e.target.closest("[data-plredraw]"); if(rd){ PL.rd={i:+rd.dataset.plredraw,pts:[],name:($("pl_n"+rd.dataset.plredraw)?.value||"").trim()}; PL.step="redraw"; PL.err=""; planoRender(); return; }
   const pm=e.target.closest("[data-plmode]"); if(pm){ PL.mode=pm.dataset.plmode; planoRender(); return; }
   const zb=e.target.closest("[data-plz]");
   if(zb){ const k=zb.dataset.plz; if(k==="fit"){ PL.z=1; plApply(); } else plZoom(k==="in"?1.6:1/1.6); return; }
@@ -4193,11 +4222,17 @@ $("planoBody").addEventListener("click",e=>{
     if(a==="read"){ PL.free=false; planoRead(); } else if(a==="detect") planoDetect(); else if(a==="create") planoCreate(); else if(a==="trace") planoTrace();
     else if(a==="cal"){ PL.step="cal"; PL.cal=[]; PL.err=""; planoRender(); }
     else if(a==="calReset"){ PL.cal=[]; planoRender(); }
+    else if(a==="rdUndo"){ PL.rd?.pts.pop(); planoRender(); }
+    else if(a==="rdCancel"){ PL.rd=null; PL.step="result"; planoRender(); }
+    else if(a==="rdDone") rdFinish();
     else if(a==="back"){ PL.step=PL.rooms?"result":"img"; planoRender(); }
     else if(a==="again"){ for(const k in PL) delete PL[k]; PL.step="pick"; planoRender(); }
     return; }
   const g=e.target.closest("[data-plr]");
   if(g&&PL.step==="result"){ const i=+g.dataset.plr; PL.off ||= new Set(); PL.off.has(i)?PL.off.delete(i):PL.off.add(i); const cb=$("pl_on"+i); if(cb) cb.checked=!PL.off.has(i); g.setAttribute("opacity",PL.off.has(i)?.3:1); return; }
+  if(PL.step==="redraw"){ const svg2=e.target.closest("#pl_svg"); if(!svg2) return; const P=PL.rd.pts, q=rdSnap(svg2,plToImg(svg2,e.clientX,e.clientY));
+    const R=18/svg2.getScreenCTM().a; if(P.length>=3&&Math.hypot(q[0]-P[0][0],q[1]-P[0][1])<R){ rdFinish(); return; }
+    const l=P[P.length-1]; if(l&&Math.hypot(q[0]-l[0],q[1]-l[1])<1) return; P.push(q); planoRender(); return; }
   const svg=e.target.closest("#pl_svg"); if(!svg||PL.step!=="cal") return;
   const q=plToImg(svg,e.clientX,e.clientY);
   const v=[Math.max(0,Math.min(PL.w,q.x)),Math.max(0,Math.min(PL.h,q.y))];
@@ -4237,6 +4272,7 @@ $("planoBody").addEventListener("pointerup",plUp); $("planoBody").addEventListen
 $("planoBody").addEventListener("wheel",e=>{ const svg=e.target.closest("#pl_svg"); if(!svg) return; e.preventDefault();
   const q=plToImg(svg,e.clientX,e.clientY); plZoom(Math.exp(-e.deltaY*(e.ctrlKey?.01:.002)),q.x,q.y); },{passive:false});
 document.addEventListener("keydown",e=>{ if(!$("dlgPlano")?.open||!$("pl_svg")||!(e.ctrlKey||e.metaKey)) return;
+  if(e.key.toLowerCase()==="z"&&PL.step==="redraw"&&!e.target.closest("input")){ e.preventDefault(); PL.rd?.pts.pop(); planoRender(); return; }
   if(e.key==="+"||e.key==="="||e.code==="NumpadAdd"){ e.preventDefault(); plZoom(1.4); }
   else if(e.key==="-"||e.code==="NumpadSubtract"){ e.preventDefault(); plZoom(1/1.4); }
   else if(e.key==="0"){ e.preventDefault(); PL.z=1; plApply(); } },true);
@@ -4874,7 +4910,7 @@ document.addEventListener("click",e=>{
     case "newCj": openCj(null); break;
     case "newCont": openCont(null); break;
     case "newGasto": openGasto(null); break;
-    case "undo": undo(); break;
+    case "undo": undoCtx(); break;
     case "newProdHere": if(r){ S.addFromPlan=r.id; openProd(null,{estanciaId:r.id}); } break;
     case "openMenu": { const m=$("projMenu"); m.open=true; fitMenu(m); break; }
     case "bell": openBell(); break;
@@ -4964,7 +5000,7 @@ document.addEventListener("change",e=>{
   if(id==="pr_y"&&v!=="") saveItem(it,{y:+v});
 });
 document.addEventListener("keydown",e=>{
-  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==="z"&&!e.target.closest("input,textarea,select,dialog")){ e.preventDefault(); undo(); return; }
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==="z"&&!e.target.closest("input,textarea,select,dialog")){ e.preventDefault(); undoCtx(); return; }
   if(e.key==="Enter"&&e.target.matches("[data-qa]")){ e.preventDefault(); quickAdd(e.target.dataset.qa); return; }
   if(e.key==="Enter"&&e.target.matches("[data-eledit]")){ const [cid,eid]=e.target.dataset.eledit.split("|"); openEl(cid,eid); return; }
   if(e.key==="Enter"&&e.target.matches("tr[data-openbud],.med")) e.target.click();
