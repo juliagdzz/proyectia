@@ -1082,7 +1082,7 @@ async function held(fn){ S.histGroup=null; S.histHeld=(S.histHeld||0)+1; try{ re
 function holdHist(ms=1500){ S.histGroup=null; S.histHoldUntil=Date.now()+ms; }
 // Paredes en diagonal: con el botón «Diagonales» o manteniendo Mayús no se enderezan
 let SHIFT=false; document.addEventListener("keydown",e=>{ if(e.key==="Shift") SHIFT=true; }); document.addEventListener("keyup",e=>{ if(e.key==="Shift") SHIFT=false; }); window.addEventListener("blur",()=>{ SHIFT=false; });
-const freeAngle=()=>!!S.diag||SHIFT;
+const freeAngle=()=>true; const STRAIGHT=.05;
 const diagBtn=(attr)=>`<button class="btn sm diag-btn${S.diag?" on":""}" type="button" ${attr} aria-pressed="${!!S.diag}" title="Permite paredes inclinadas (o mantén pulsada la tecla Mayús)">◢ Diagonales${S.diag?" ✓":""}</button>`;
 // Deshacer: si estás dibujando quita el último punto; si no, el último cambio guardado
 function undoCtx(){
@@ -1678,9 +1678,10 @@ function bindDraw(r){
   const toCm=e=>{const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;return pt.matrixTransform(svg.getScreenCTM().inverse())};
   const G=planoGuide(r), o=S.drawOff||{x:0,y:0};
   const snap=e=>{ const c=toCm(e), P=S.drawPts||[], st=gridStep(10); let x=Math.round(c.x/st)*st, y=Math.round(c.y/st)*st;
-    if(G?.M){ const f=guideSnap(G,r.calco,c.x-o.x,c.y-o.y,hs*2.6); if(f.x!=null) x=f.x+o.x; if(f.y!=null) y=f.y+o.y; }
+    if(G?.M){ const cc=r.calco, u=(c.x-o.x-(+cc.x||0))/cc.w*G.w, v=(c.y-o.y-(+cc.y||0))/cc.l*G.h, f=nearestWallPt(G.M,G.w,G.h,u,v,Math.max(2,Math.round(hs*2/G.kw)));
+      if(f){ x=Math.round(f[0]*G.kw+(+cc.x||0)+o.x); y=Math.round(f[1]*G.kw+(+cc.y||0)+o.y); } }
     x=Math.max(0,Math.min(D,x)); y=Math.max(0,Math.min(D,y));
-    if(P.length){ const l=P[P.length-1], dx=Math.abs(x-l[0]), dy=Math.abs(y-l[1]); if(!freeAngle()){ if(dx<dy*.35) x=l[0]; else if(dy<dx*.35) y=l[1]; }
+    if(P.length){ const l=P[P.length-1], dx=Math.abs(x-l[0]), dy=Math.abs(y-l[1]); if(dx<dy*STRAIGHT) x=l[0]; else if(dy<dx*STRAIGHT) y=l[1];
       const f=P[0]; if(P.length>=3&&Math.hypot(x-f[0],y-f[1])<hs*1.5) return [...f];
       if(Math.abs(x-f[0])<hs*.7) x=f[0]; if(Math.abs(y-f[1])<hs*.7) y=f[1]; }
     for(const q of S.drawRef||[]){ if(Math.hypot(x-q[0],y-q[1])<hs*1.3) return [...q]; }
@@ -1740,15 +1741,15 @@ function shapePanel(r,P){
   const estName=e=>({viga:"Viga",pilar:"Columna",tabique:"Tabique"})[e.tipo]||"Elemento";
   if(S.wallDraw){ const n=S.wallDraw.pts.length;
     return `<div class="panel room-ed"><div class="ph"><h3>Dibujar pared</h3></div>
-    <ol class="sh-steps"><li>Pincha en una <b>pared o esquina</b> para empezar (también vale en medio de la estancia para un tabique suelto).</li><li>Pincha donde la pared <b>gira</b>. Las paredes salen rectas (para una inclinada activa «◢ Diagonales» o mantén Mayús) y ves lo que mide cada tramo.</li><li>Termina pinchando <b>otra pared</b>: si has ido por fuera, la estancia crece; si has ido por dentro, se crea un tabique.</li></ol>
+    <ol class="sh-steps"><li>Pincha en una <b>pared o esquina</b> para empezar (también vale en medio de la estancia para un tabique suelto).</li><li>Pincha donde la pared <b>gira</b>. El punto va donde pinches (también en diagonal) y se imanta a las esquinas y paredes cercanas; ves lo que mide cada tramo.</li><li>Termina pinchando <b>otra pared</b>: si has ido por fuera, la estancia crece; si has ido por dentro, se crea un tabique.</li></ol>
     <p class="muted" style="margin:0;font-size:12px">Acerca con los dedos, la rueda o Ctrl + para afinar.</p>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${diagBtn('data-act="diagToggle"')}<button class="btn sm" type="button" data-act="wdUndo"${n?"":" disabled"}>↶ Quitar el último punto</button><button class="btn sm primary" type="button" data-act="wdDone"${n>=2?"":" disabled"}>Terminar aquí (tabique)</button><button class="btn ghost sm" type="button" data-act="wdCancel">Cancelar</button></div></div>`; }
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" type="button" data-act="wdUndo"${n?"":" disabled"}>↶ Quitar el último punto</button><button class="btn sm primary" type="button" data-act="wdDone"${n>=2?"":" disabled"}>Terminar aquí (tabique)</button><button class="btn ghost sm" type="button" data-act="wdCancel">Cancelar</button></div></div>`; }
   if(S.drawMode){ const n=(S.drawPts||[]).length, sel=S.drawSel!=null;
     return `<div class="panel room-ed"><div class="ph"><h3>${S.drawNew?"Otra habitación al lado":"Dibujar la forma"}</h3></div>
     <ol class="sh-steps">${S.drawNew?`<li>La habitación actual sale en gris. Pincha donde va <b>cada esquina</b> de la nueva: se pegan solas a las esquinas de la otra.</li>`:`${S.drawExt?`<li>Partes de la esquina <b style="color:var(--red)">roja</b>. Pincha hacia donde quieres llevar la pared nueva, luego donde gira, y así hasta volver.</li><li>Para cerrar, pincha el <b style="color:var(--ok)">punto verde</b>: la pared vieja entre el rojo y el verde se sustituye por las nuevas.</li>`:(S.drawPts||[]).length?`<li>Sigues desde tu forma: pincha en el plano para <b>añadir esquinas</b> después del punto <b style="color:var(--red)">rojo</b> (el último).</li>`:`<li>Pincha donde va <b>cada esquina</b> de la estancia${r.calco?.plano?", encima de las paredes del plano de fondo":""}. ${r.calco?.plano?" Las paredes del plano salen en <b style=\"color:var(--blue-ink)\">azul</b> y los puntos se pegan a ellas. Acércate con los dedos, la rueda o Ctrl + para afinar.":" Los puntos se pegan a una cuadrícula de 10 cm y luego ajustas cada medida pulsándola."}</li>`}`}
       <li><b>Pincha cualquier punto</b> para borrarlo o para seguir dibujando desde él.</li>${S.drawExt?"":`<li>Para terminar, pincha el <b style="color:var(--ok)">punto verde</b> o pulsa «Cerrar la forma».</li>`}</ol>
     ${sel?`<div class="fx-form"><h4>Punto seleccionado</h4><div class="full" style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm danger" type="button" data-act="drawDelPt">🗑 Borrar este punto</button><button class="btn sm primary" type="button" data-act="drawFrom">➜ Seguir desde aquí</button><button class="btn ghost sm" type="button" data-act="drawSelNone">Cancelar</button></div></div>`:""}
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${diagBtn('data-act="diagToggle"')}<button class="btn primary sm" type="button" id="drawClose" data-act="drawClose"${n<3?" disabled":""}>Cerrar la forma</button><button class="btn sm" type="button" id="drawUndo" data-act="drawUndo"${n?"":" disabled"}>↶ Quitar el último punto</button><button class="btn sm danger" type="button" id="drawClear" data-act="drawClear"${n?"":" disabled"}>🗑 Borrar y empezar de cero</button><button class="btn ghost sm" type="button" data-act="drawCancel">Cancelar</button></div></div>`; }
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary sm" type="button" id="drawClose" data-act="drawClose"${n<3?" disabled":""}>Cerrar la forma</button><button class="btn sm" type="button" id="drawUndo" data-act="drawUndo"${n?"":" disabled"}>↶ Quitar el último punto</button><button class="btn sm danger" type="button" id="drawClear" data-act="drawClear"${n?"":" disabled"}>🗑 Borrar y empezar de cero</button><button class="btn ghost sm" type="button" data-act="drawCancel">Cancelar</button></div></div>`; }
   let form="";
   if(f){
     const el=f.eid!=null&&est.find(x=>String(x.id)===String(f.eid)), t=f.tipo, horiz=f.dir?f.dir==="h":true, v=k=>f[k]??"";
@@ -3995,11 +3996,11 @@ function wdSnap(r,P,c,hs){
   const R=hs*1.5, W=S.wallDraw, prev=W.pts[W.pts.length-1], st=gridStep(5);
   for(const [i,v] of P.entries()) if(Math.hypot(c.x-v[0],c.y-v[1])<hs*1.1) return {x:v[0],y:v[1],wall:i,u:i};
   let x=Math.round(c.x/st)*st, y=Math.round(c.y/st)*st, lock=null;
-  const G=r.calco?.plano?planoGuide(r):null; if(G?.M){ const f=guideSnap(G,r.calco,c.x,c.y,R); if(f.x!=null) x=f.x; if(f.y!=null) y=f.y; }
+  const G=r.calco?.plano?planoGuide(r):null; if(G?.M){ const cc=r.calco, f=nearestWallPt(G.M,G.w,G.h,(c.x-(+cc.x||0))/cc.w*G.w,(c.y-(+cc.y||0))/cc.l*G.h,Math.max(2,Math.round(R/G.kw))); if(f){ x=Math.round(f[0]*G.kw+(+cc.x||0)); y=Math.round(f[1]*G.kw+(+cc.y||0)); } }
   // alineado con las esquinas que ya hay
   let ax=null, ay=null; for(const v of P){ if(Math.abs(c.x-v[0])<hs*.7&&(ax==null||Math.abs(c.x-v[0])<Math.abs(c.x-ax))) ax=v[0]; if(Math.abs(c.y-v[1])<hs*.7&&(ay==null||Math.abs(c.y-v[1])<Math.abs(c.y-ay))) ay=v[1]; }
   if(ax!=null) x=ax; if(ay!=null) y=ay;
-  if(prev&&!freeAngle()){ const dx=Math.abs(c.x-prev.x), dy=Math.abs(c.y-prev.y); if(dx<dy*.4){ x=prev.x; lock="v"; } else if(dy<dx*.4){ y=prev.y; lock="h"; } }
+  if(prev){ const dx=Math.abs(x-prev.x), dy=Math.abs(y-prev.y); if(dx<dy*STRAIGHT){ x=prev.x; lock="v"; } else if(dy<dx*STRAIGHT){ y=prev.y; lock="h"; } }
   // ¿cae sobre una pared?
   let best=null;
   P.forEach((p,i)=>{ const q=P[(i+1)%P.length], dx=q[0]-p[0], dy=q[1]-p[1], L2=dx*dx+dy*dy; if(L2<1) return;
@@ -4088,16 +4089,33 @@ function dpClosed(P,eps){
   return [...A.slice(0,-1),...B.slice(0,-1)];
 }
 // Dibujar a mano una estancia dentro del diálogo: puntos rectos y pegados a las paredes de la imagen
-function rdSnap(svg,q){
-  const P=PL.rd.pts, R=16/svg.getScreenCTM().a, prev=P[P.length-1], f0=P[0]; let x=q.x, y=q.y;
-  const C=PL.ctx; if(C){ const f=guideSnap({M:C.M,w:C.w,h:C.h,kw:1/C.s},{x:0,y:0,w:PL.w,l:PL.h},x,y,R); if(f.x!=null) x=f.x; if(f.y!=null) y=f.y; }
-  if(prev&&!freeAngle()){ const dx=Math.abs(x-prev[0]), dy=Math.abs(y-prev[1]); if(dx<dy*.35) x=prev[0]; else if(dy<dx*.35) y=prev[1]; }
-  if(f0&&P.length>=2){ if(Math.abs(x-f0[0])<R*.6) x=f0[0]; if(Math.abs(y-f0[1])<R*.6) y=f0[1]; }
+// Punto de pared más cercano en la máscara (prefiere esquinas); devuelve la cara de la pared, en píxeles de la máscara
+function nearestWallPt(M,w,h,u,v,rp){
+  const at=(a,b)=>a<0||b<0||a>=w||b>=h?0:M[b*w+a], u0=Math.round(u), v0=Math.round(v); let bc=null,bd=Infinity,be=null,bed=Infinity;
+  for(let b=v0-rp;b<=v0+rp;b++) for(let a=u0-rp;a<=u0+rp;a++){ if(a<0||b<0||a>=w||b>=h||M[b*w+a]) continue;
+    const L=at(a-1,b), Rr=at(a+1,b), U=at(a,b-1), D=at(a,b+1); if(!L&&!Rr&&!U&&!D) continue;
+    const fx=L?a:Rr?a+1:a+.5, fy=U?b:D?b+1:b+.5, d=(fx-u)**2+(fy-v)**2; if(d>rp*rp) continue;
+    if((L||Rr)&&(U||D)){ if(d<bd){ bd=d; bc=[fx,fy]; } } else if(d<bed){ bed=d; be=[L||Rr?fx:u,U||D?fy:v]; } }
+  return bc||be;
+}
+function rdSnap(svg,q,skip){
+  const P=PL.rd.pts, R=18/svg.getScreenCTM().a; let x=q.x, y=q.y;
+  for(const [j,p] of P.entries()){ if(j===skip) continue; if(Math.hypot(p[0]-x,p[1]-y)<R*.8) return [p[0],p[1]]; }
+  const C=PL.ctx; if(C){ const f=nearestWallPt(C.M,C.w,C.h,x*C.s,y*C.s,Math.max(2,Math.round(R*C.s))); if(f){ x=f[0]/C.s; y=f[1]/C.s; } }
+  const prev=skip==null?P[P.length-1]:P[(skip-1+P.length)%P.length];
+  if(prev){ const dx=Math.abs(x-prev[0]), dy=Math.abs(y-prev[1]); if(dx<dy*STRAIGHT) x=prev[0]; else if(dy<dx*STRAIGHT) y=prev[1]; }
   return [Math.round(x*10)/10,Math.round(y*10)/10];
+}
+function rdOverlay(){
+  const e=PL.rooms.find(x=>x.i===PL.rd.i), P=PL.rd.pts, sw=Math.max(2,PL.w/300), z=plZ(), closed=PL.rd.closed;
+  const old=e?`<polygon points="${e.P.map(q=>q.join(",")).join(" ")}" fill="#9CA3AF" fill-opacity=".15" stroke="#6B7280" stroke-width="2" stroke-dasharray="6 5" vector-effect="non-scaling-stroke"/>`:"";
+  const shape=P.length>1?(closed?`<polygon points="${P.map(q=>q.join(",")).join(" ")}" fill="#2B6CB0" fill-opacity=".18" stroke="#6D0101" stroke-width="3" vector-effect="non-scaling-stroke"/>`:`<polyline points="${P.map(q=>q.join(",")).join(" ")}" fill="none" stroke="#6D0101" stroke-width="3" vector-effect="non-scaling-stroke"/>`):"";
+  const dots=P.map((q,j)=>{ const r0=closed?sw*2:j?sw*1.6:sw*2.4; return `<circle cx="${q[0]}" cy="${q[1]}" data-r="${r0}" r="${r0/z}" fill="${closed?"#fff":j?"#6D0101":"#2F855A"}" stroke="${closed?"#C2410C":"#fff"}" stroke-width="${closed?2.5:1.5}" vector-effect="non-scaling-stroke"/>`; }).join("");
+  return old+shape+dots;
 }
 function rdFinish(){
   const P=PL.rd?.pts||[]; if(P.length<3){ toast("Pon al menos tres esquinas."); return; }
-  const e=PL.rooms.find(x=>x.i===PL.rd.i); if(e){ const [n]=roomsToCm([{nombre:e.nombre,m2:e.m2,P:S.diag?P.map(p=>[...p]):orthoPoly(P)}]); Object.assign(e,{P:n.P,Q:n.Q,mx:n.mx,my:n.my,area:n.area,dudosa:false}); PL.off?.delete(e.i); }
+  const e=PL.rooms.find(x=>x.i===PL.rd.i); if(e){ const [n]=roomsToCm([{nombre:e.nombre,m2:e.m2,P:P.map(p=>[...p])}]); Object.assign(e,{P:n.P,Q:n.Q,mx:n.mx,my:n.my,area:n.area,dudosa:false}); PL.off?.delete(e.i); }
   PL.rd=null; PL.step="result"; planoRender(); toast("Estancia redibujada. Revisa las demás y pulsa «Crear las estancias».");
 }
 function planoScale(){
@@ -4199,13 +4217,10 @@ function planoRender0(){
       ${dest}<div class="pl-acts"><button class="btn primary" type="button" data-pl="create">Crear las estancias</button>${PL.free?`<button class="btn" type="button" data-pl="trace">✏️ Mejor las dibujo yo</button><button class="btn ghost sm" type="button" data-pl="cal">Cambiar la escala</button>`:`<button class="btn" type="button" data-pl="cal">✏️ Mejor calcar a mano</button>`}</div>
       <p class="muted" style="font-size:12px">Las formas son aproximadas: después pulsa una medida azul en «Editar estancia» para ajustarla con lo que midas.</p>`; return; }
   if(PL.step==="redraw"){
-    const e=PL.rooms.find(x=>x.i===PL.rd.i), pts=PL.rd.pts, sw=Math.max(2,PL.w/300), z=plZ();
-    const old=e?`<polygon points="${e.P.map(q=>q.join(",")).join(" ")}" fill="#9CA3AF" fill-opacity=".15" stroke="#6B7280" stroke-width="2" stroke-dasharray="6 5" vector-effect="non-scaling-stroke"/>`:"";
-    const line=pts.length>1?`<polyline points="${pts.map(q=>q.join(",")).join(" ")}" fill="none" stroke="#6D0101" stroke-width="3" vector-effect="non-scaling-stroke"/>`:"";
-    const dots=pts.map((q,j)=>`<circle cx="${q[0]}" cy="${q[1]}" data-r="${j?sw*1.6:sw*2.4}" r="${(j?sw*1.6:sw*2.4)/z}" fill="${j?"#6D0101":"#2F855A"}" stroke="#fff" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`).join("");
-    B.innerHTML=`${err}<p><b>Dibuja «${esc(PL.rd.name||e?.nombre||"la estancia")}»:</b> toca cada esquina por dentro de sus paredes; los puntos se pegan a las paredes del plano y salen rectos (para una pared inclinada activa «◢ Diagonales» o mantén Mayús). Para cerrarla, toca el punto <b style="color:#2F855A">verde</b> o pulsa «Listo». Acércate con los dedos, la rueda o Ctrl + para afinar.</p>
-      ${planoSVG(old+`<g id="pl_rdl">${line}</g>`+dots,"cal")}
-      <div class="pl-acts"><button class="btn primary" type="button" data-pl="rdDone"${pts.length<3?" disabled":""}>Listo</button>${diagBtn('data-pl="diag"')}<button class="btn" type="button" data-pl="rdUndo"${pts.length?"":" disabled"}>↶ Quitar el último punto</button><button class="btn ghost sm" type="button" data-pl="rdCancel">Cancelar</button></div>`; return; }
+    const e=PL.rooms.find(x=>x.i===PL.rd.i), pts=PL.rd.pts, closed=PL.rd.closed;
+    B.innerHTML=`${err}<p><b>Dibuja «${esc(PL.rd.name||e?.nombre||"la estancia")}»:</b> ${closed?`ya está cerrada. <b>Arrastra cualquier punto</b> para corregirlo y pulsa «Listo» cuando esté bien.`:`toca cada esquina por dentro de sus paredes. El punto va donde toques y se imanta a la esquina o pared del plano más cercana. Para cerrarla, toca el punto <b style="color:#2F855A">verde</b>; luego aún podrás corregir los puntos arrastrándolos.`} Acércate con los dedos, la rueda o Ctrl + para afinar.</p>
+      ${planoSVG(rdOverlay(),"cal")}
+      <div class="pl-acts">${closed?`<button class="btn primary" type="button" data-pl="rdDone">Listo</button><button class="btn" type="button" data-pl="rdOpen">Seguir añadiendo puntos</button>`:`<button class="btn primary" type="button" data-pl="rdClose"${pts.length<3?" disabled":""}>Cerrar la forma</button><button class="btn" type="button" data-pl="rdUndo"${pts.length?"":" disabled"}>↶ Quitar el último punto</button>`}<button class="btn ghost sm" type="button" data-pl="rdCancel">Cancelar</button></div>`; return; }
   if(PL.step==="cal"){
     const [a,b]=PL.cal||[];
     B.innerHTML=`${err}<p><b>1 ·</b> Pincha los dos extremos de algo cuya medida sepas: la barra de escala (por ejemplo de 0 a 5 m) o una cota del plano. Acércate para hacerlo exacto; si un punto no ha quedado bien, arrástralo.</p>
@@ -4231,16 +4246,17 @@ $("planoBody").addEventListener("click",e=>{
     else if(a==="cal"){ PL.step="cal"; PL.cal=[]; PL.err=""; planoRender(); }
     else if(a==="calReset"){ PL.cal=[]; planoRender(); }
     else if(a==="rdUndo"){ PL.rd?.pts.pop(); planoRender(); }
+    else if(a==="rdClose"){ if(PL.rd&&PL.rd.pts.length>=3){ PL.rd.closed=true; planoRender(); } }
+    else if(a==="rdOpen"){ if(PL.rd){ PL.rd.closed=false; planoRender(); } }
     else if(a==="rdCancel"){ PL.rd=null; PL.step="result"; planoRender(); }
     else if(a==="rdDone") rdFinish();
-    else if(a==="diag"){ S.diag=!S.diag; planoRender(); }
     else if(a==="back"){ PL.step=PL.rooms?"result":"img"; planoRender(); }
     else if(a==="again"){ for(const k in PL) delete PL[k]; PL.step="pick"; planoRender(); }
     return; }
   const g=e.target.closest("[data-plr]");
   if(g&&PL.step==="result"){ const i=+g.dataset.plr; PL.off ||= new Set(); PL.off.has(i)?PL.off.delete(i):PL.off.add(i); const cb=$("pl_on"+i); if(cb) cb.checked=!PL.off.has(i); g.setAttribute("opacity",PL.off.has(i)?.3:1); return; }
-  if(PL.step==="redraw"){ const svg2=e.target.closest("#pl_svg"); if(!svg2) return; const P=PL.rd.pts, q=rdSnap(svg2,plToImg(svg2,e.clientX,e.clientY));
-    const R=18/svg2.getScreenCTM().a; if(P.length>=3&&Math.hypot(q[0]-P[0][0],q[1]-P[0][1])<R){ rdFinish(); return; }
+  if(PL.step==="redraw"){ const svg2=e.target.closest("#pl_svg"); if(!svg2||PL.rd.closed) return; const P=PL.rd.pts, raw=plToImg(svg2,e.clientX,e.clientY), q=rdSnap(svg2,raw);
+    const R=18/svg2.getScreenCTM().a; if(P.length>=3&&Math.hypot(raw.x-P[0][0],raw.y-P[0][1])<R){ PL.rd.closed=true; planoRender(); return; }
     const l=P[P.length-1]; if(l&&Math.hypot(q[0]-l[0],q[1]-l[1])<1) return; P.push(q); planoRender(); return; }
   const svg=e.target.closest("#pl_svg"); if(!svg||PL.step!=="cal") return;
   const q=plToImg(svg,e.clientX,e.clientY);
@@ -4266,6 +4282,8 @@ $("planoBody").addEventListener("pointerdown",e=>{
   if(PLP.size>2) return;
   let pi=-1; const M=svg.getScreenCTM();
   if(PL.step==="cal") (PL.cal||[]).forEach((q,i)=>{ if(Math.hypot(M.a*q[0]+M.e-e.clientX,M.d*q[1]+M.f-e.clientY)<24) pi=i; });
+  let ri=-1; if(PL.step==="redraw") (PL.rd?.pts||[]).forEach((q,i)=>{ if(Math.hypot(M.a*q[0]+M.e-e.clientX,M.d*q[1]+M.f-e.clientY)<20&&(PL.rd.closed||i>0||PL.rd.pts.length<3)) ri=i; });
+  if(ri>=0){ plG={t:"rpt",i:ri,x:e.clientX,y:e.clientY,moved:false}; return; }
   plG={t:pi>=0?"pt":"pan",i:pi,x:e.clientX,y:e.clientY,cx:PL.cx??PL.w/2,cy:PL.cy??PL.h/2,moved:false};
 });
 $("planoBody").addEventListener("pointermove",e=>{
@@ -4273,6 +4291,7 @@ $("planoBody").addEventListener("pointermove",e=>{
   if(plG.t==="pinch"){ if(PLP.size<2) return; const [a,b]=[...PLP.values()], d=Math.hypot(a.x-b.x,a.y-b.y), mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
     PL.z=Math.min(20,Math.max(1,plG.z*d/plG.d)); plApply(); const c=plToImg(svg,mx,my); PL.cx+=plG.mx-c.x; PL.cy+=plG.my-c.y; plApply(); return; }
   const dx=e.clientX-plG.x, dy=e.clientY-plG.y; if(!plG.moved&&Math.hypot(dx,dy)<6) return; if(!plG.moved){ try{ svg.setPointerCapture(e.pointerId); }catch{} } plG.moved=true; PL.dragged=true;
+  if(plG.t==="rpt"){ PL.rd.pts[plG.i]=rdSnap(svg,plToImg(svg,e.clientX,e.clientY),plG.i); $("pl_ov").innerHTML=rdOverlay(); plApply(); return; }
   if(plG.t==="pt"){ const q=plToImg(svg,e.clientX,e.clientY); PL.cal[plG.i]=[Math.max(0,Math.min(PL.w,q.x)),Math.max(0,Math.min(PL.h,q.y))]; $("pl_ov").innerHTML=calOverlay(); return; }
   if(plZ()>1){ const k=1/svg.getScreenCTM().a; PL.cx=plG.cx-dx*k; PL.cy=plG.cy-dy*k; plApply(); }
 });
