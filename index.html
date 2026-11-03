@@ -4165,7 +4165,7 @@ function planoDetect(){
       W=E.ctx?detectWhole(E.ctx):null; }catch(e){ E=[]; }
     PL.noScale=false;
     if(!E.length&&!W){ PL.step="cal"; PL.err="No he encontrado las paredes. Comprueba la escala o dibújalo tú con «Dibujarlas yo»."; planoRender(); return; }
-    PL.rooms=roomsToCm(E); PL.whole=W; PL.tabOff=new Set(); PL.ctx=E.ctx||null; PL.mode=PL.mode||(W?"una":"varias"); if(!W) PL.mode="varias"; PL.labs=null; plLabs();
+    PL.rooms=roomsToCm(E); PL.whole=W; PL.tabOff=new Set(); PL.ctx=E.ctx||null; PL.mode=PL.mode||"varias"; if(!W) PL.mode="varias"; PL.labs=null; plLabs();
     PL.off=new Set(PL.rooms.filter(e=>e.dudosa).map(e=>e.i)); PL.step="result"; planoRender();
     const ocr=PL.ocrP?null:plOCR(); (ocr||PL.ocrP).then(ws=>{ plApplyOCR(ws); if(PL.step==="result"){ planoRender(); } });
   },30);
@@ -4211,7 +4211,7 @@ function calOverlay(){
   return (a&&b?`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#F86C2F" stroke-width="2" vector-effect="non-scaling-stroke"/>`:"")+(a?mk(a):"")+(b?mk(b):"");
 }
 function planoRender(){ planoRender0(); plApply(); }
-const modeSeg=()=>`<div class="seg pl-seg" role="group" aria-label="Cómo crear el plano"><button type="button" data-plmode="una" aria-pressed="${PL.mode==="una"}">🏠 Toda la casa en una estancia</button><button type="button" data-plmode="varias" aria-pressed="${PL.mode!=="una"}">▦ Una estancia por habitación</button></div>`;
+const modeSeg=()=>`<div class="seg pl-seg" role="group" aria-label="Cómo crear el plano"><button type="button" data-plmode="varias" aria-pressed="${PL.mode!=="una"}">▦ Una estancia por habitación</button><button type="button" data-plmode="una" aria-pressed="${PL.mode==="una"}">🏠 Toda la casa en una estancia</button></div>`;
 function planoRender0(){
   const B=$("planoBody"); if(!B) return; const err=PL.err?`<div class="pl-err">${esc(PL.err)}</div>`:"";
   const m2=v=>v.toLocaleString("es-ES",{maximumFractionDigits:2});
