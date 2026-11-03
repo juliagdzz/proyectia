@@ -613,6 +613,9 @@ s.old{color:var(--muted);font-size:.6em;font-weight:500;margin-left:4px}
 .pl-zl:empty{display:none}
 .pl-seg{display:flex;width:100%}
 .pl-seg button{flex:1;padding:8px 6px}
+.pl-wt{gap:6px}
+.pl-tol{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600}
+.pl-tol input{width:120px}
 .pl-hint{margin:0;font-size:12px;color:var(--muted)}
 .pl-view.cal{cursor:crosshair}
 .pl-acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -3749,11 +3752,12 @@ function wallMask(px,w,h,kw,opt={}){
   const T=opt.T??Math.max(70,Math.min(170,otsu(L)+(opt.dT||0)));
   let M=new Uint8Array(N);
   // paredes rellenas de gris: solo cuenta el gris del relleno, no las líneas negras de muebles y textos
-  if(opt.band){ const [a,b]=opt.band; for(let i=0;i<N;i++) M[i]=L[i]>=a&&L[i]<b?1:0; }
+  if(opt.color){ const [cr,cg,cb]=opt.color, t2=(opt.tol||45)**2; for(let i=0;i<N;i++){ const dr=px[i*4]-cr, dg=px[i*4+1]-cg, db=px[i*4+2]-cb; M[i]=dr*dr+dg*dg+db*db<t2||L[i]<T?1:0; } }
+  else if(opt.band){ const [a,b]=opt.band; for(let i=0;i<N;i++) M[i]=L[i]>=a&&L[i]<b?1:0; }
   else for(let i=0;i<N;i++) M[i]=L[i]<T?1:0;
-  const R0=new Uint8Array(N); for(let i=0;i<N;i++) R0[i]=L[i]<(opt.band?150:Math.max(T,150))?1:0;
-  const ho=Math.max(1,Math.floor((opt.thin||(opt.band?2:3))/kw)); M=morph(morph(M,w,h,ho,true),w,h,ho,false);
-  if(opt.band) M=morph(M,w,h,1,false); // recupera el contorno de la pared
+  const R0=new Uint8Array(N); for(let i=0;i<N;i++) R0[i]=L[i]<(opt.band||opt.color?150:Math.max(T,150))?1:0;
+  const ho=Math.max(1,Math.floor((opt.color?2:opt.thin||(opt.band?2:3))/kw)); M=morph(morph(M,w,h,ho,true),w,h,ho,false);
+  if(opt.band||opt.color) M=morph(M,w,h,1,false); // recupera el contorno de la pared
   return {M,T,R0};
 }
 // Busca la cara de pared más cercana en horizontal y en vertical (coordenadas de la estancia, en cm)
@@ -4202,9 +4206,26 @@ function rdFinish(){
 // Prueba varios anchos de puerta y tonos de pared (también paredes gris claro) y se queda con lo que separa más habitaciones
 function bestDetect(){
   const score=X=>X.filter(e=>!e.dudosa&&polyArea(e.P)*PL.k*PL.k>=3e4).length; let best=-1, E=[], o0=null;
-  for(const o of [{door:45},{door:55},{door:65},{door:80},{dT:25,door:55},{band:[150,236],door:55},{band:[150,236],door:70},{band:[110,236],door:55}]){
+  const wp=PL.wallPick, cands=wp?[45,55,65,80].map(d=>({door:d,color:wp.color,tol:wp.tol,thick:wp.thick})):null;
+  for(const o of cands||[{door:45},{door:55},{door:65},{door:80},{dT:25,door:55},{band:[150,236],door:55},{band:[150,236],door:70},{band:[110,236],door:55}]){
     let X=[]; try{ X=detectRooms(o); }catch{ X=[]; } const sc=score(X); if(sc>best){ best=sc; E=X; o0=o; } }
-  PL.wallOpt=o0?.band?{band:o0.band}:o0?.T?{T:o0.T}:null; return {E,opt:o0};
+  PL.wallOpt=o0?.color?{color:o0.color,tol:o0.tol,thick:o0.thick}:o0?.band?{band:o0.band}:o0?.T?{T:o0.T}:null; return {E,opt:o0};
+}
+function maskURL(ctx){ const c=document.createElement("canvas"); c.width=ctx.w; c.height=ctx.h; const x=c.getContext("2d"), o=x.createImageData(ctx.w,ctx.h);
+  for(let i=0;i<ctx.w*ctx.h;i++) if(ctx.M[i]) o.data.set([37,99,235,200],i*4); x.putImageData(o,0,0); return c.toDataURL("image/png"); }
+// Tocar una pared: se mide su color y su grosor y se vuelve a detectar con eso
+function pickWall(x,y){
+  const cx=PL.canvas.getContext("2d"), W=PL.w, H=PL.h, X=Math.round(x), Y=Math.round(y);
+  if(X<1||Y<1||X>=W-1||Y>=H-1) return;
+  const d=cx.getImageData(0,0,W,H).data, at=(a,b)=>{ const i=(b*W+a)*4; return [d[i],d[i+1],d[i+2]]; };
+  let r=0,g=0,b=0; for(let j=-1;j<=1;j++) for(let i=-1;i<=1;i++){ const c=at(X+i,Y+j); r+=c[0]; g+=c[1]; b+=c[2]; } const col=[r/9,g/9,b/9].map(Math.round), tol=PL.wallPick?.tol||45;
+  const near=(a,b2)=>{ if(a<0||b2<0||a>=W||b2>=H) return false; const c=at(a,b2); return (c[0]-col[0])**2+(c[1]-col[1])**2+(c[2]-col[2])**2<tol*tol; };
+  const run=(dx,dy)=>{ let n=0; while(n<400&&near(X+dx*(n+1),Y+dy*(n+1))) n++; return n; };
+  const thick=Math.max(3,Math.min(run(1,0)+run(-1,0)+1,run(0,1)+run(0,-1)+1)*PL.k);
+  const lum=(col[0]*299+col[1]*587+col[2]*114)/1000;
+  if(lum>240){ toast("Eso parece el suelo o el fondo. Toca el relleno de una pared."); return; }
+  PL.wallPick={color:col,tol,thick:Math.round(thick)}; PL.showMask=true; PL.pick=false;
+  toast(`Pared de ${Math.round(thick)} cm de grosor. Buscando las paredes de ese color…`); planoDetect();
 }
 function planoScale(){
   const [a,b]=PL.cal||[], cmv=+($("pl_cm")?.value||PL.calCm||0), d=a&&b?Math.hypot(b[0]-a[0],b[1]-a[1]):0;
@@ -4222,7 +4243,7 @@ function planoDetect(){
       W=E.ctx?detectWhole(E.ctx):null; }catch(e){ E=[]; }
     PL.noScale=false;
     if(!E.length&&!W){ PL.step="cal"; PL.err="No he encontrado las paredes. Comprueba la escala o dibújalo tú con «Dibujarlas yo»."; planoRender(); return; }
-    PL.rooms=roomsToCm(E); PL.whole=W; PL.tabOff=new Set(); PL.ctx=E.ctx||null; PL.mode=PL.mode||"varias"; if(!W) PL.mode="varias"; PL.labs=null; plLabs();
+    PL.rooms=roomsToCm(E); PL.whole=W; PL.tabOff=new Set(); PL.ctx=E.ctx||null; PL.maskUrl=PL.ctx?maskURL(PL.ctx):null; PL.mode=PL.mode||"varias"; if(!W) PL.mode="varias"; PL.labs=null; plLabs();
     PL.off=new Set(PL.rooms.filter(e=>e.dudosa).map(e=>e.i)); PL.step="result"; planoRender();
     const ocr=PL.ocrP?null:plOCR(); (ocr||PL.ocrP).then(ws=>{ plApplyOCR(ws); if(PL.step==="result"){ planoRender(); } });
   },30);
@@ -4270,6 +4291,8 @@ function calOverlay(){
   return (a&&b?`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#F86C2F" stroke-width="2" vector-effect="non-scaling-stroke"/>`:"")+(a?mk(a):"")+(b?mk(b):"");
 }
 function planoRender(){ planoRender0(); plApply(); }
+const wallTools=()=>PL.free?`<div class="pl-acts pl-wt"><button class="btn sm${PL.pick?" primary":""}" type="button" data-pl="pickWall">🎯 ${PL.pick?"Toca el relleno de una pared en el plano…":PL.wallPick?"Elegir otra pared":"¿Fallan las paredes? Elige su color"}</button><button class="btn sm ghost" type="button" data-pl="mask">👁 ${PL.showMask!==false?"Ocultar":"Ver"} paredes detectadas</button>${PL.wallPick?`<label class="pl-tol">Sensibilidad <input type="range" id="pl_tol" min="10" max="110" step="5" value="${PL.wallPick.tol}"></label><button class="btn sm ghost" type="button" data-pl="pickReset">Volver a la automática</button>`:""}</div>`:"";
+const maskImg=()=>PL.showMask!==false&&PL.maskUrl?`<image href="${PL.maskUrl}" x="0" y="0" width="${PL.w}" height="${PL.h}" preserveAspectRatio="none" opacity=".55"/>`:"";
 const modeSeg=()=>`<div class="seg pl-seg" role="group" aria-label="Cómo crear el plano"><button type="button" data-plmode="varias" aria-pressed="${PL.mode!=="una"}">▦ Una estancia por habitación</button><button type="button" data-plmode="una" aria-pressed="${PL.mode==="una"}">🏠 Toda la casa en una estancia</button></div>`;
 function planoRender0(){
   const B=$("planoBody"); if(!B) return; const err=PL.err?`<div class="pl-err">${esc(PL.err)}</div>`:"";
@@ -4290,7 +4313,7 @@ function planoRender0(){
       +(Wh.doors||[]).map(d=>`<rect x="${d.x/PL.k}" y="${d.y/PL.k}" width="${d.w/PL.k}" height="${d.d/PL.k}" fill="#2F855A" fill-opacity=".8"/>`).join("")+Wh.tab.map((t,i)=>{ const off=PL.tabOff?.has(i), m=Math.max(2,PL.w/250)/PL.k*PL.k; return `<g data-pltab="${i}" style="cursor:pointer"><rect x="${t.x/PL.k-m}" y="${t.y/PL.k-m}" width="${t.w/PL.k+2*m}" height="${t.d/PL.k+2*m}" fill="transparent"/><rect x="${t.x/PL.k}" y="${t.y/PL.k}" width="${t.w/PL.k}" height="${t.d/PL.k}" fill="${off?"#9CA3AF":"#C2410C"}" fill-opacity="${off?.35:.8}"/></g>`; }).join("")
       +labs.map((l,i)=>`<g><circle cx="${l.x}" cy="${l.y}" r="${fs*.8}" fill="${l.t?"#2F855A":"#6B7280"}"/><text x="${l.x}" y="${l.y}" dy=".35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="#fff">${i+1}</text>${plIconsSVG(l.x,l.y,fs,`data-pllabed="${i}"`,`data-pllabdel="${i}"`)}</g>`).join("");
     const st=PL.ocrState==="leyendo"?`<div class="pl-wait">Leyendo los nombres del plano… (la primera vez tarda un poco más)</div>`:PL.ocrState==="ok"?`<p class="muted" style="font-size:13px">✓ He leído los nombres que se entendían. Revisa y completa los que falten.</p>`:PL.ocrState?`<p class="muted" style="font-size:13px">No he podido leer los nombres del plano: escríbelos tú (los vacíos no se ponen).</p>`:"";
-    B.innerHTML=`${err}${modeSeg()}${planoSVG(ov)}
+    B.innerHTML=`${err}${modeSeg()}${wallTools()}${planoSVG(maskImg()+ov)}
       <p>Toda la casa en <b>una estancia</b> de ${cm(W)}×${cm(L)} cm (${area.toLocaleString("es-ES",{maximumFractionDigits:1})} m²), con <b>${Wh.tab.length-(PL.tabOff?.size||0)} tramos de tabique</b> en naranja${(Wh.doors||[]).length?` y <b>${Wh.doors.length} puertas interiores</b> en verde`:""}; las puertas y ventanas de las paredes de fuera se añaden al crearla. <b>Toca uno para quitarlo</b> si es un mueble y no una pared (vuelve a tocarlo para recuperarlo).</p>
       <div class="pl-acts"><label for="pl_rname" style="font-weight:600">Nombre</label><input id="pl_rname" type="text" value="${esc(PL.rname||"Casa")}" style="flex:1;min-width:0"></div>
       <h4 style="margin:4px 0 0">Nombres de las habitaciones <span class="muted" style="font-weight:400;font-size:13px">· se ven en el plano</span></h4>${st}
@@ -4300,7 +4323,7 @@ function planoRender0(){
   if(PL.step==="result"){
     const R=PL.rooms, fs=Math.max(14,PL.w/45), NUM=new Map(R.map((e,k)=>[e.i,k+1])), poly=R.map(e=>{ const c=PL_COL[e.i%PL_COL.length], on=!PL.off?.has(e.i), xs=e.P.map(p=>p[0]), ys=e.P.map(p=>p[1]), mx=(Math.min(...xs)+Math.max(...xs))/2, my=(Math.min(...ys)+Math.max(...ys))/2;
       return `<g data-plr="${e.i}" style="cursor:pointer" opacity="${on?1:.3}"><polygon points="${e.P.map(q=>q.join(",")).join(" ")}" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="${Math.max(2,PL.w/400)}"/><circle cx="${mx}" cy="${my}" r="${fs*.8}" fill="${c}"/><text x="${mx}" y="${my}" dy=".35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="#fff">${NUM.get(e.i)}</text>${PL.free?plIconsSVG(mx,my,fs,`data-plredraw="${e.i}"`,`data-plrdel="${e.i}"`):""}</g>`; }).join("");
-    B.innerHTML=`${err}${PL.free&&PL.whole?modeSeg():""}${planoSVG(poly)}
+    B.innerHTML=`${err}${PL.free&&PL.whole?modeSeg():""}${wallTools()}${planoSVG(maskImg()+poly)}
       <p>He encontrado <b>${R.length} estancia${R.length>1?"s":""}</b>. ${PL.free?`Pulsa ✏️ para ponerles nombre o corregirlas y 🗑 para quitar las que sobren (el número coincide con el del plano).${PL.rooms.some(e=>e.dudosa)?" Las desmarcadas parecen espacios de fuera de la casa.":""}`:"Quita las que no quieras y cambia el nombre si hace falta."}${PL.noScale?" <b>No he podido sacar la escala</b>: revisa las medidas después.":""}</p>
       <ul class="pl-list">${R.map(e=>{ const {W,L}=bbox(e.Q); return `<li><input type="checkbox" id="pl_on${e.i}"${PL.off?.has(e.i)?"":" checked"} aria-label="Crear ${esc(e.nombre)}"><span class="pl-sw pl-num" style="background:${PL_COL[e.i%PL_COL.length]}">${NUM.get(e.i)}</span><b class="pl-name">${esc(plName(e))}</b><small>${cm(W)}×${cm(L)} cm · ${m2(e.area)} m²${e.m2?` (plano: ${m2(e.m2)})`:""}</small><button class="btn ghost sm" type="button" data-plredraw="${e.i}" title="Cambiar el nombre o la forma">✏️ Editar</button><button class="icon-btn sm danger" type="button" data-plrdel="${e.i}" title="Quitar esta estancia" aria-label="Quitar ${esc(e.nombre)}">🗑</button></li>`; }).join("")}</ul>
       <p class="muted" style="font-size:12px;margin:0">Para cambiar el nombre o corregir la forma de una, pulsa su ✏️ (en el plano o en la lista). Al pulsar «Listo» vuelves aquí.</p>
@@ -4324,7 +4347,7 @@ $("planoBody").addEventListener("input",e=>{ const id=e.target.id||""; let m;
   else if(id==="rd_name"&&PL.rd) PL.rd.name=e.target.value;
   else if((m=/^pl_l(\d+)$/.exec(id))){ const l=plLabs()[+m[1]]; if(l){ l.t=e.target.value; l.ocr=false; } }
   else if((m=/^pl_n(\d+)$/.exec(id))&&PL.free){ const l=plLabs().find(x=>x.room===+m[1]); if(l){ l.t=e.target.value; l.ocr=false; } } });
-$("planoBody").addEventListener("change",e=>{ const m=/^pl_on(\d+)$/.exec(e.target.id||""); if(m){ PL.off ||= new Set(); e.target.checked?PL.off.delete(+m[1]):PL.off.add(+m[1]); const g=document.querySelector(`[data-plr="${m[1]}"]`); if(g) g.setAttribute("opacity",e.target.checked?1:.3); } if(e.target.id==="pl_file") planoFile(e.target.files[0]); if(e.target.id==="pl_cm") PL.calCm=+e.target.value||500; });
+$("planoBody").addEventListener("change",e=>{ if(e.target.id==="pl_tol"&&PL.wallPick){ PL.wallPick.tol=+e.target.value; planoDetect(); return; } const m=/^pl_on(\d+)$/.exec(e.target.id||""); if(m){ PL.off ||= new Set(); e.target.checked?PL.off.delete(+m[1]):PL.off.add(+m[1]); const g=document.querySelector(`[data-plr="${m[1]}"]`); if(g) g.setAttribute("opacity",e.target.checked?1:.3); } if(e.target.id==="pl_file") planoFile(e.target.files[0]); if(e.target.id==="pl_cm") PL.calCm=+e.target.value||500; });
 $("planoBody").addEventListener("click",e=>{
   const tb=e.target.closest("[data-pltab]"); if(tb&&!PL.dragged){ const i=+tb.dataset.pltab; PL.tabOff ||= new Set(); PL.tabOff.has(i)?PL.tabOff.delete(i):PL.tabOff.add(i); planoRender(); return; }
   const rdel=e.target.closest("[data-plrdel]");
@@ -4336,6 +4359,7 @@ $("planoBody").addEventListener("click",e=>{
   const zb=e.target.closest("[data-plz]");
   if(zb){ const k=zb.dataset.plz; if(k==="fit"){ PL.z=1; plApply(); } else plZoom(k==="in"?1.6:1/1.6); return; }
   if(e.target.closest("#pl_svg")&&PL.dragged){ PL.dragged=false; return; }
+  if(PL.pick&&PL.step==="result"){ const sv=e.target.closest("#pl_svg"); if(sv){ const q=plToImg(sv,e.clientX,e.clientY); pickWall(q.x,q.y); return; } }
   const b=e.target.closest("[data-pl]");
   if(b){ const a=b.dataset.pl;
     if(a==="read"){ PL.free=false; planoRead(); } else if(a==="detect") planoDetect(); else if(a==="create") planoCreate(); else if(a==="trace") planoTrace();
@@ -4343,6 +4367,9 @@ $("planoBody").addEventListener("click",e=>{
     else if(a==="calReset"){ PL.cal=[]; planoRender(); }
     else if(a==="newImport"){ planoOpen(); }
     else if(a==="rdUndo"){ PL.rd?.pts.pop(); planoRender(); }
+    else if(a==="pickWall"){ PL.pick=!PL.pick; planoRender(); }
+    else if(a==="mask"){ PL.showMask=PL.showMask===false; planoRender(); }
+    else if(a==="pickReset"){ PL.wallPick=null; PL.pick=false; planoDetect(); }
     else if(a==="rdClose"){ if(PL.rd&&PL.rd.pts.length>=3){ PL.rd.closed=true; planoRender(); } }
     else if(a==="rdOpen"){ if(PL.rd){ PL.rd.closed=false; planoRender(); } }
     else if(a==="rdClear"){ if(PL.rd){ PL.rd.pts=[]; PL.rd.closed=false; PL.rd.sel=null; planoRender(); } }
