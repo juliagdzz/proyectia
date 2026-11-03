@@ -1,5 +1,5 @@
 // Guarda la app para que abra rápido y funcione sin conexión. Sube CACHE al cambiar este archivo.
-const CACHE = "proletia-v13";
+const CACHE = "proletia-v14";
 const SHELL = [
   "/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/favicon.svg",
   "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js",
