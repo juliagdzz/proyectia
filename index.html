@@ -347,6 +347,9 @@ table.budget .ok{color:var(--ok);font-weight:600}
 .btn.rl-bud.on,.btn.rl-bud[aria-pressed="true"]{background:#E3F3E9;color:var(--ok);border-color:var(--ok);font-weight:700}
 .rl-bud .sh{display:none}
 @media (max-width:560px){ .rl-bud .lg{display:none} .rl-bud .sh{display:inline} .rl-acts{flex-direction:column;align-items:stretch} .rl-bud{padding:6px 9px} }
+.cat-h{display:flex;justify-content:space-between;align-items:center;gap:8px;position:sticky;top:0;z-index:3;background:inherit;padding:6px 0;margin-top:-6px}
+.cat-h h3{margin:0}
+.rl-h .rl-close{margin-left:auto}
 .cat-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .cat-tools input{flex:1 1 150px;min-width:0;padding:9px 12px 9px 34px;border-radius:10px;border:1px solid var(--blue);background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2323407E' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-4-4'/%3E%3C/svg%3E") no-repeat 11px center;font-size:15px}
 .cat-tools input:focus{outline:2px solid var(--blue);outline-offset:1px}
@@ -2038,7 +2041,7 @@ function planHTML(p,r){
     <div class="side">
       ${!es&&S.paint?paintPanel(r):es||!sel?"":propsHTML(sel)}
       ${es?shapePanel(r,P):""}
-      ${es?"":`<div class="panel cat-panel"><h3>Muebles de ejemplo</h3>
+      ${es?"":`<div class="panel cat-panel"><div class="cat-h"><h3>Muebles de ejemplo</h3><button class="btn ghost sm" type="button" data-act="catCloseAll" title="Cerrar todos los grupos del catálogo">▴ Cerrar todas</button></div>
         <div class="cat-tools"><input id="cat_q" type="search" placeholder="Buscar: sofá, cafetera, escalera…" autocomplete="off" value="${esc(S.catQ||"")}" aria-label="Buscar muebles de ejemplo">
           <span class="cat-n" title="Cuántas unidades se añaden al pulsar uno"><span class="muted">Añadir</span><span class="qty"><button type="button" data-addn="-1" aria-label="Una menos"${(S.addN||1)<=1?" disabled":""}>−</button><b>${S.addN||1}</b><button type="button" data-addn="1" aria-label="Una más">+</button></span></span></div>
         <p class="muted" style="margin:0;font-size:12px">Pulsa uno para ponerlo en ${esc(r.nombre)}${(S.addN||1)>1?` · se añadirán <b>${S.addN} unidades</b>`:""}</p>
@@ -2993,7 +2996,7 @@ function roomListsHTML(p,r){
   S.productos.filter(x=>x.proyectoId===pid&&x.estado!=="descartado"&&(x.estanciaId===r.id||!x.estanciaId)).forEach(x=>(g[x.busco||"Sin lista"] ||= []).push(x));
   S.listas.filter(l=>l.proyectoId===pid&&(l.estanciaId===r.id||!l.estanciaId)).forEach(l=>{ g[l.nombre] ||= []; });
   const names=Object.keys(g).sort((a,b)=>a.localeCompare(b,"es"));
-  const head=`<div class="rl-h"><h3>Muebles de ${esc(r.nombre)}</h3><span class="muted" style="font-size:13px">Abre una lista: «Al presupuesto» lo suma a lo que vas a gastar y «Al plano» lo coloca en la estancia</span></div>`;
+  const head=`<div class="rl-h"><h3>Muebles de ${esc(r.nombre)}</h3><button class="btn ghost sm rl-close" type="button" data-act="rlCloseAll" title="Cerrar todas las listas">▴ Cerrar todas</button><span class="muted" style="font-size:13px">Abre una lista: «Al presupuesto» lo suma a lo que vas a gastar y «Al plano» lo coloca en la estancia</span></div>`;
   if(!names.length) return `<section class="rl">${head}<div class="rl-empty">Aún no hay listas para esta estancia. Créalas en <button class="btn sm" type="button" data-tab="productos">Productos</button> (por ejemplo «Mueble de TV» o «Sofá»), mete las opciones que veas y aparecerán aquí para elegir.</div></section>`;
   const win=n=>g[n].find(x=>x.estado==="comprado")||g[n].find(x=>x.estado==="elegido");
   const ons=n=>g[n].filter(x=>x.estado==="comprado"||x.estado==="elegido");
@@ -4919,6 +4922,8 @@ document.addEventListener("click",e=>{
     case "newMed": openMed(null); break;
     case "dxf": $("dxfIn").value=""; $("dxfIn").click(); break;
     case "importPlano": planoOpen(); break;
+    case "catCloseAll": S.openCats.clear(); S.catQ=""; render(); break;
+    case "rlCloseAll": S.openLists.clear(); render(); break;
     case "wallDraw": S.wallDraw={pts:[]}; S.shapeSel=null; S.fixForm=null; S.holeForm=null; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
     case "wdUndo": if(S.wallDraw){ S.wallDraw.pts.pop(); render(); } break;
     case "wdCancel": S.wallDraw=null; render(); break;
