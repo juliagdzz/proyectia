@@ -3727,11 +3727,11 @@ function drawFrame(r,mult,min){
 const GUIDES=new Map();
 function planoGuide(r){
   const pl=S.proyectos.find(p=>p.id===r?.proyectoId)?.plano; if(!pl?.img||!r?.calco?.plano) return null;
-  const key=r.proyectoId+":"+pl.img.length; let g=GUIDES.get(key); if(g) return g.M?g:null;
+  const key=r.proyectoId+":"+pl.img.length+":"+(pl.T||0); let g=GUIDES.get(key); if(g) return g.M?g:null;
   g={}; GUIDES.set(key,g);
   const im=new Image(); im.onload=()=>{ try{
     const w=im.naturalWidth, h=im.naturalHeight, c=document.createElement("canvas"); c.width=w; c.height=h; const x=c.getContext("2d"); x.drawImage(im,0,0);
-    const kw=pl.w/w, {M}=wallMask(x.getImageData(0,0,w,h).data,w,h,kw);
+    const kw=pl.w/w, {M}=wallMask(x.getImageData(0,0,w,h).data,w,h,kw,pl.T?{T:pl.T}:{});
     const o=x.createImageData(w,h); for(let i=0;i<w*h;i++) if(M[i]) o.data.set([37,99,235,150],i*4);
     x.clearRect(0,0,w,h); x.putImageData(o,0,0); Object.assign(g,{M,w,h,kw,url:c.toDataURL("image/png")});
     if(S.drawMode) render(); }catch{} };
@@ -3740,7 +3740,7 @@ function planoGuide(r){
 // Paredes = trazos oscuros y con grosor (se quitan textos, muebles y líneas finas)
 function wallMask(px,w,h,kw,opt={}){
   const N=w*h, L=new Uint8Array(N); for(let i=0;i<N;i++) L[i]=(px[i*4]*299+px[i*4+1]*587+px[i*4+2]*114)/1000;
-  const T=Math.max(70,Math.min(170,otsu(L)+(opt.dT||0)));
+  const T=opt.T??Math.max(70,Math.min(170,otsu(L)+(opt.dT||0)));
   let M=new Uint8Array(N); for(let i=0;i<N;i++) M[i]=L[i]<T?1:0;
   const ho=Math.max(1,Math.floor((opt.thin||3)/kw)); M=morph(morph(M,w,h,ho,true),w,h,ho,false);
   return {M,T};
@@ -3820,7 +3820,7 @@ function planoBg(){ const a=imgToJpeg(PL.canvas,1200,.7); return {img:a.url,w:Ma
 async function planoProject(){
   const dest=$("pl_dest")?.value||"cur"; let p=proyecto();
   if(!p||dest==="new"){ const id=uid(); await save("proyectos",id,{nombre:($("pl_pname")?.value||"").trim()||"Mi casa",tipo:"casa",presupuesto:0,direccion:"",notas:"",creado:Date.now()}); S.proyId=id; lsSet("proletix:proy",id); p=S.proyectos.find(x=>x.id===id); }
-  const bg=planoBg(), {id,...b}=p; await save("proyectos",id,{...b,plano:bg}); return {pid:id,bg};
+  const bg={...planoBg(),...(PL.wallT?{T:PL.wallT}:{})}, {id,...b}=p; await save("proyectos",id,{...b,plano:bg}); return {pid:id,bg};
 }
 async function planoCreate(redraw){
   if(PL.free&&PL.mode==="una"&&redraw==null) return planoCreateWhole();
@@ -3969,9 +3969,15 @@ function plOCR(){
     if(!window.Tesseract) await new Promise((ok,ko)=>{ const sc=document.createElement("script"); sc.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"; sc.onload=ok; sc.onerror=ko; document.head.appendChild(sc); });
     const f=Math.max(1,Math.min(4,2600/Math.max(PL.w,PL.h))), c=document.createElement("canvas"); c.width=Math.round(PL.w*f); c.height=Math.round(PL.h*f);
     const x=c.getContext("2d"); x.imageSmoothingQuality="high"; x.drawImage(PL.canvas,0,0,c.width,c.height);
-    const res=await Promise.race([window.Tesseract.recognize(c,"spa"),new Promise((_,ko)=>setTimeout(()=>ko(new Error("tiempo")),120000))]);
+    // dos lecturas: la imagen tal cual y en blanco y negro (sin rellenos grises ni tramas claras) buscando texto suelto
+    const c2=document.createElement("canvas"); c2.width=c.width; c2.height=c.height; const x2=c2.getContext("2d"); x2.drawImage(c,0,0);
+    const id=x2.getImageData(0,0,c.width,c.height), dd=id.data; for(let i=0;i<dd.length;i+=4){ const l=(dd[i]*299+dd[i+1]*587+dd[i+2]*114)/1000, v=l<140?0:255; dd[i]=dd[i+1]=dd[i+2]=v; } x2.putImageData(id,0,0);
+    const wk=await window.Tesseract.createWorker("spa"); let r1=null, r2=null;
+    try{ const lim=new Promise((_,ko)=>setTimeout(()=>ko(new Error("tiempo")),150000));
+      r1=await Promise.race([wk.recognize(c),lim]); await wk.setParameters({tessedit_pageseg_mode:"11"}); r2=await Promise.race([wk.recognize(c2),lim]); }
+    finally{ wk.terminate(); }
     const out=[];
-    for(const line of res.data?.lines||[]){ const ws=(line.words||[]).filter(w=>w.text?.trim()); let run=null;
+    for(const line of [...(r1?.data?.lines||[]),...(r2?.data?.lines||[])]){ const ws=(line.words||[]).filter(w=>w.text?.trim()); let run=null;
       const flush=()=>{ if(run){ out.push({t:run.t,x:(run.b.x0+run.b.x1)/2/f,y:(run.b.y0+run.b.y1)/2/f}); run=null; } };
       for(const w of ws){ const txt=w.text.trim(), parts=txt.split(/[-–\/]+/).filter(Boolean), ks=parts.map(vocMatch), hgt=w.bbox.y1-w.bbox.y0;
         const near=run&&w.bbox.x0-run.b.x1<hgt*2.5;
@@ -3980,7 +3986,8 @@ function plOCR(){
         else if(run&&near&&/^(\d{1,2}|[IVX]{1,3})[.,]?$/.test(txt)){ run.t+=" "+txt.replace(/[.,]$/,""); run.b.x1=w.bbox.x1; flush(); }
         else flush(); }
       flush(); }
-    PL.ocrState=out.length?"ok":"nada"; return out;
+    const uniq=out.filter((w,i)=>!out.slice(0,i).some(v=>v.t.toLowerCase()===w.t.toLowerCase()&&Math.hypot(v.x-w.x,v.y-w.y)<PL.w/25));
+    PL.ocrState=uniq.length?"ok":"nada"; return uniq;
   }catch{ PL.ocrState="error"; return []; } })();
 }
 // Nombres para cada zona detectada (los que lee el OCR rellenan los vacíos)
@@ -4131,6 +4138,13 @@ function rdFinish(){
   const e=PL.rooms.find(x=>x.i===PL.rd.i); if(e){ const [n]=roomsToCm([{nombre:e.nombre,m2:e.m2,P:P.map(p=>[...p])}]); Object.assign(e,{P:n.P,Q:n.Q,mx:n.mx,my:n.my,area:n.area,dudosa:false}); PL.off?.delete(e.i); }
   PL.rd=null; PL.step="result"; planoRender(); toast("Estancia redibujada. Revisa las demás y pulsa «Crear las estancias».");
 }
+// Prueba varios anchos de puerta y tonos de pared (también paredes gris claro) y se queda con lo que separa más habitaciones
+function bestDetect(){
+  const score=X=>X.filter(e=>!e.dudosa&&polyArea(e.P)*PL.k*PL.k>=3e4).length; let best=-1, E=[], o0=null;
+  for(const o of [{door:45},{door:55},{door:65},{door:80},{dT:25,door:55},{T:200,door:55},{T:200,door:70},{T:225,door:55},{T:225,door:70}]){
+    let X=[]; try{ X=detectRooms(o); }catch{ X=[]; } const sc=score(X); if(sc>best){ best=sc; E=X; o0=o; } }
+  PL.wallT=o0?.T; return {E,opt:o0};
+}
 function planoScale(){
   const [a,b]=PL.cal||[], cmv=+($("pl_cm")?.value||PL.calCm||0), d=a&&b?Math.hypot(b[0]-a[0],b[1]-a[1]):0;
   if(!(d>3)){ toast("Pincha dos puntos del plano."); return false; }
@@ -4143,8 +4157,7 @@ function planoDetect(){
   setTimeout(()=>{
     let E=[], W=null; try{
       // se prueban varios anchos de puerta y se queda el que separa más habitaciones de verdad
-      const score=X=>X.filter(e=>!e.dudosa&&polyArea(e.P)*PL.k*PL.k>=3e4).length; let best=-1;
-      for(const o of [{door:45},{door:55},{door:65},{door:80},{dT:25,door:55}]){ const X=detectRooms(o), sc=score(X); if(sc>best){ best=sc; E=X; } }
+      ({E}=bestDetect());
       W=E.ctx?detectWhole(E.ctx):null; }catch(e){ E=[]; }
     PL.noScale=false;
     if(!E.length&&!W){ PL.step="cal"; PL.err="No he encontrado las paredes. Comprueba la escala o dibújalo tú con «Dibujarlas yo»."; planoRender(); return; }
@@ -4166,7 +4179,7 @@ async function planoCreateWhole(){
   }catch{ toast("No se ha podido crear la estancia."); }
 }
 async function planoTrace(){
-  if(!planoScale()) return; holdHist();
+  if(!planoScale()) return; if(!PL.rooms) bestDetect(); holdHist();
   try{
     const {pid,bg}=await planoProject(), id=uid(), n=roomsOf(pid).length+1;
     await save("estancias",id,{proyectoId:pid,nombre:`Estancia ${n}`,ancho:bg.w,largo:bg.l,alto:250,calco:{plano:1,x:0,y:0,w:bg.w,l:bg.l},creado:Date.now()});
@@ -4282,6 +4295,10 @@ document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&S.wallDraw&&!docum
 document.addEventListener("keydown",e=>{ if(!S.editShape||S.vista==="3d"||!(e.ctrlKey||e.metaKey)||document.querySelector("dialog[open]")) return;
   const z0=S.zoom||1; let z=z0; if(e.key==="+"||e.key==="="||e.code==="NumpadAdd") z=z0*1.4; else if(e.key==="-"||e.code==="NumpadSubtract") z=z0/1.4; else if(e.key==="0") z=1; else return;
   e.preventDefault(); S.zoom=Math.max(1,Math.min(16,z)); if(S.zoom===1) S.zoomC=null; render(); });
+// Intro en un campo de texto no cierra estas ventanas: solo confirma lo escrito
+["dlgPlano","dlgRooms"].forEach(id=>$(id).addEventListener("keydown",e=>{ if(e.key==="Enter"&&e.target.matches("input:not([type=checkbox]):not([type=file])")){ e.preventDefault(); e.target.dispatchEvent(new Event("change",{bubbles:true})); e.target.blur(); } }));
+// Tampoco el editor de la estancia: Intro en un campo confirma y sigue editando
+document.addEventListener("keydown",e=>{ if(e.key==="Enter"&&e.target.matches?.(".room-ed input[type=text],.room-ed input:not([type])")&&!e.target.closest("dialog")){ e.preventDefault(); e.target.dispatchEvent(new Event("change",{bubbles:true})); e.target.blur(); } });
 // Nombres del plano: cambiar el texto o quitarlos desde el editor
 document.addEventListener("click",e=>{ const b=e.target.closest("[data-labdel]"); if(!b) return; const p=proyecto(), r=p&&room(p); if(!r) return;
   const {id,...rest}=r; save("estancias",id,{...rest,etiquetas:(r.etiquetas||[]).filter(l=>l.id!==b.dataset.labdel)}).then(()=>toast("Nombre quitado",undo)).catch(()=>{}); });
