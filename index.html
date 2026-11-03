@@ -1926,16 +1926,29 @@ function template(k,W,L){
   return [[0,0],[W,0],[W,L],[0,L]];
 }
 const saveShape=(r,P)=>held(()=>saveShape0(r,P));
+// Una puerta o ventana sigue en su pared al cambiar la forma: misma posición si se puede, pegada a la pared si esta se mueve
+function holeKeep(it,P0,P,mx,my){
+  const {fw,fd}=footprint(it), cx=it.x+fw/2, cy=it.y+fd/2, w=+it.w; let o=null;
+  P0.forEach((p,i)=>{ const q=P0[(i+1)%P0.length], dx=q[0]-p[0], dy=q[1]-p[1], L2=dx*dx+dy*dy; if(L2<1) return; const t=Math.max(0,Math.min(1,((cx-p[0])*dx+(cy-p[1])*dy)/L2)), d=Math.hypot(cx-p[0]-dx*t,cy-p[1]-dy*t); if(!o||d<o.d) o={d,px:p[0]+dx*t,py:p[1]+dy*t,ux:dx/Math.sqrt(L2),uy:dy/Math.sqrt(L2)}; });
+  if(!o) return null; const ax=o.px-mx, ay=o.py-my; let best=null;
+  P.forEach((p,j)=>{ const q=P[(j+1)%P.length], dx=q[0]-p[0], dy=q[1]-p[1], len=Math.hypot(dx,dy); if(len<w+2) return; const ux=dx/len, uy=dy/len;
+    if(Math.abs(ux*o.ux+uy*o.uy)<.95) return; const t=((ax-p[0])*dx+(ay-p[1])*dy)/(len*len); const tc=Math.max(0,Math.min(1,t)), d=Math.hypot(ax-p[0]-dx*tc,ay-p[1]-dy*tc);
+    if(!best||d<best.d) best={j,d,along:Math.max(w/2,Math.min(len-w/2,t*len))}; });
+  if(!best) return null;
+  return holePose(P,best.j,best.along,it.tipo,w);
+}
 async function saveShape0(r,P){
   P=P.filter((p,i)=>{ const q=P[(i+1)%P.length]; return P.length<=3||Math.hypot(q[0]-p[0],q[1]-p[1])>=1; });
   for(let i=0;P.length>3&&i<P.length;){ const a=P[(i-1+P.length)%P.length], p=P[i], b=P[(i+1)%P.length], cr=(p[0]-a[0])*(b[1]-p[1])-(p[1]-a[1])*(b[0]-p[0]), dt=(p[0]-a[0])*(b[0]-p[0])+(p[1]-a[1])*(b[1]-p[1]);
     if(Math.abs(cr)<1e-6*Math.max(1,Math.hypot(p[0]-a[0],p[1]-a[1])*Math.hypot(b[0]-p[0],b[1]-p[1]))&&dt>0) P.splice(i,1); else i++; }
   if(P.length<3) return;
   const mx=Math.min(...P.map(p=>p[0])), my=Math.min(...P.map(p=>p[1]));
-  if(mx||my){
-    P=P.map(([x,y])=>[x-mx,y-my]);
-    for(const it of S.items.filter(i=>i.estanciaId===r.id)){ const {id,...b}=it; await save("items",id,{...b,x:it.x-mx,y:it.y-my}).catch(()=>{}); }
-  }
+  // forma anterior (la guardada, no la de arrastre) para saber en qué pared estaba cada puerta o ventana
+  const P0=Array.isArray(r.puntos)&&r.puntos.length>=3?r.puntos.map(p=>[+p.x,+p.y]):[[0,0],[+r.ancho,0],[+r.ancho,+r.largo],[0,+r.largo]];
+  P=P.map(([x,y])=>[x-mx,y-my]);
+  for(const it of S.items.filter(i=>i.estanciaId===r.id)){ const {id,...b}=it;
+    if(isHueco(it)){ const np=holeKeep(it,P0,P,mx,my); if(np){ await save("items",id,{...b,...np}).catch(()=>{}); continue; } }
+    if(mx||my) await save("items",id,{...b,x:it.x-mx,y:it.y-my}).catch(()=>{}); }
   const {W,L}=bbox(P); const {id,...b}=r;
   S.tmpPts=null;
   // la estructura se mueve con la forma y se queda siempre dentro de la estancia
