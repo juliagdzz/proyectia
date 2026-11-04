@@ -555,6 +555,7 @@ s.old{color:var(--muted);font-size:.6em;font-weight:500;margin-left:4px}
 .pt-btn{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;border-radius:999px;border:1px solid var(--blue);background:rgb(255 255 255 / .94);color:var(--blue-ink);font-weight:700;font-size:14px;box-shadow:0 4px 14px rgb(35 64 126 / .16);cursor:pointer;white-space:nowrap}
 .pt-btn span[aria-hidden]{font-size:18px}
 .pt-btn[disabled]{opacity:.45;cursor:default;box-shadow:none}
+.pt-lock{padding:0;width:38px;justify-content:center}
 .pt-btn.on{background:var(--blue-ink);color:#fff;border-color:var(--blue-ink)}
 @media (max-width:560px){ .pt-btn{height:34px;padding:0 11px;font-size:13px} }
 .icon-btn.lock-btn.on,.icon-btn.lock-btn[aria-pressed="true"]{background:var(--blue-ink);color:#fff;border-color:var(--blue-ink)}
@@ -2058,7 +2059,7 @@ function planHTML(p,r){
   <div class="planner">
     <div class="plan-main"><div class="canvas${es?" ed":""}">
       ${es&&!v3?`<div class="plan-tools"><button class="pt-btn" type="button" data-act="undo"${S.hist.length||(S.drawMode&&(S.drawPts||[]).length)||(S.wallDraw?.pts.length)?"":" disabled"} title="Deshacer (Ctrl+Z)"><span aria-hidden="true">↶</span> Deshacer</button><button class="pt-btn" type="button" data-zoom="1.6" title="Acercar">＋</button><button class="pt-btn" type="button" data-zoom="0.625" title="Alejar"${Z<=1?" disabled":""}>－</button>${Z>1?`<button class="pt-btn" type="button" data-zoom="0" title="Ver la estancia entera">⤢ Ver todo</button>`:""}<span class="pt-note">Rueda del ratón o pellizca para acercar · arrastra el fondo para moverte</span></div>`:""}
-      ${es?"":`<div class="plan-tools"><button class="pt-btn" type="button" data-act="undo"${S.hist.length?"":" disabled"} title="Deshacer el último cambio (Ctrl+Z)"><span aria-hidden="true">↶</span> Deshacer</button><button class="pt-btn${S.human?" on":""}" type="button" data-act="human" title="Ver si cabes: distancias para pasar y vista a la altura de los ojos"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2.5"/><path d="M12 8v7M8 10.5l4-1.5 4 1.5M9.5 22l2.5-7 2.5 7"/></svg><span>Persona</span></button><button class="pt-btn${S.dims?" on":""}" type="button" data-act="dims" title="Mostrar las medidas: espacio libre entre muebles y paredes"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17 17 3l4 4L7 21z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/></svg><span>Medidas</span></button>${r.calco?.plano?`<button class="pt-btn${S.showPlano?" on":""}" type="button" data-act="togglePlano" title="Ver el plano de fondo debajo de los muebles">🗺 <span>Plano</span></button>`:""}${S.human&&v3?`<div class="seg pt-seg" role="group" aria-label="Cómo te ves"><button type="button" data-hview="1" aria-pressed="${S.hview==="1"}">👁 1ª persona</button><button type="button" data-hview="3" aria-pressed="${S.hview!=="1"}">🧍‍♀️ 3ª persona</button></div>`:""}${(()=>{ const n=items.filter(i=>i.bloq).length; return n>1?`<button class="pt-btn" type="button" data-act="unlockAll" title="Desbloquear todos los muebles bloqueados de esta estancia">${UNLOCK_SVG}<span>Desbloquear (${n})</span></button>`:""; })()}</div>`}
+      ${es?"":`<div class="plan-tools"><button class="pt-btn" type="button" data-act="undo"${S.hist.length?"":" disabled"} title="Deshacer el último cambio (Ctrl+Z)"><span aria-hidden="true">↶</span> Deshacer</button><button class="pt-btn${S.human?" on":""}" type="button" data-act="human" title="Ver si cabes: distancias para pasar y vista a la altura de los ojos"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2.5"/><path d="M12 8v7M8 10.5l4-1.5 4 1.5M9.5 22l2.5-7 2.5 7"/></svg><span>Persona</span></button><button class="pt-btn${S.dims?" on":""}" type="button" data-act="dims" title="Mostrar las medidas: espacio libre entre muebles y paredes"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17 17 3l4 4L7 21z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/></svg><span>Medidas</span></button>${r.calco?.plano?`<button class="pt-btn${S.showPlano?" on":""}" type="button" data-act="togglePlano" title="Ver el plano de fondo debajo de los muebles">🗺 <span>Plano</span></button>`:""}${S.human&&v3?`<div class="seg pt-seg" role="group" aria-label="Cómo te ves"><button type="button" data-hview="1" aria-pressed="${S.hview==="1"}">👁 1ª persona</button><button type="button" data-hview="3" aria-pressed="${S.hview!=="1"}">🧍‍♀️ 3ª persona</button></div>`:""}${(()=>{ const n=items.filter(i=>i.bloq).length; return n>1?`<button class="pt-btn" type="button" data-act="unlockAll" title="Desbloquear todos los muebles bloqueados de esta estancia">${UNLOCK_SVG}<span>Desbloquear (${n})</span></button>`:""; })()}<button class="pt-btn pt-lock${r.bloqTodo?" on":""}" type="button" data-act="lockAll" aria-pressed="${!!r.bloqTodo}" title="${r.bloqTodo?"Desbloquear todos los muebles":"Bloquear todos los muebles de la estancia"}" aria-label="${r.bloqTodo?"Desbloquear todos los muebles":"Bloquear todos los muebles"}">${r.bloqTodo?LOCK_SVG:UNLOCK_SVG}</button></div>`}
       ${v3?`<div id="view3d"></div><span class="hint">Arrastra el fondo para girar la vista · pellizca o usa la rueda para acercar · arrastra un mueble para moverlo</span>`:`<svg id="plan" data-pad="${pad}" data-hs="${hs}" data-d="${DR}" viewBox="${VB.join(" ")}" data-z="${Z}" role="img" aria-label="Plano de ${esc(r.nombre)}">
         <g id="roomGeom">${S.drawMode&&es?drawBgSVG(DR):roomGeomSVG(P,pad,r.sueloColor||DEF_FIN.sueloColor,{r,edit:es,paint:S.paint&&!es,z:Z})}</g>${es&&S.drawMode&&r.calco?.plano&&planoGuide(r)?.url?`<g id="guide" pointer-events="none"${S.drawOff?` transform="translate(${S.drawOff.x} ${S.drawOff.y})"`:""}><image href="${planoGuide(r).url}" x="${+r.calco.x||0}" y="${+r.calco.y||0}" width="${r.calco.w}" height="${r.calco.l}" preserveAspectRatio="none"/></g>`:""}${(r.etiquetas||[]).length&&!(es&&S.drawMode)?`<g id="labLayer">${labelsSVG(r,es,W,L)}</g>`:""}${r.calco&&(!r.calco.plano||es||S.showPlano)?`<g id="calco" opacity="${r.calco.plano?(S.calcoMove?.75:.5):.55}" pointer-events="none"${r.calco.plano?' style="mix-blend-mode:multiply"':""}${es&&S.drawMode&&S.drawOff?` transform="translate(${S.drawOff.x} ${S.drawOff.y})"`:""}>${calcoSVG(r.calco,r)}</g>`:""}
         <g id="itemsLayer"${es?' class="es-dim" style="pointer-events:none"':""}${es&&S.drawMode&&S.drawOff?` transform="translate(${S.drawOff.x} ${S.drawOff.y})"`:""}>${[...items].filter(i=>!(es&&!S.drawMode&&isHueco(i))).sort((a,b)=>(a.tipo==="alfombra"||/alfombra/i.test(a.nombre)?-1:0)-(b.tipo==="alfombra"||/alfombra/i.test(b.nombre)?-1:0)).map(i=>itemSVG(i,bad.has(i.id))).join("")}</g>
@@ -2092,8 +2093,8 @@ function propsHTML(it){
   return `<div class="panel" id="props">
     <div class="pr-h"><div style="min-width:0"><span class="label">Mueble seleccionado</span><h3>${esc(it.nombre)}</h3></div>
       <div class="pr-ic"><button class="icon-btn lock-btn${it.bloq?" on":""}" type="button" data-act="lockItem" aria-pressed="${!!it.bloq}" aria-label="${it.bloq?"Desbloquear":"Bloquear"} este mueble" title="${it.bloq?"Bloqueado: púlsalo para poder moverlo":"Bloquear para no moverlo sin querer"}">${it.bloq?LOCK_SVG:UNLOCK_SVG}</button><button class="icon-btn" type="button" data-act="dup" aria-label="Duplicar este mueble" title="Duplicar"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg></button><button class="icon-btn danger" type="button" data-act="delItem" aria-label="Borrar este mueble" title="${it.bloq?"Desbloquéalo para poder borrarlo":"Borrar"}"${it.bloq?" disabled":""}>${trash}</button><button class="icon-btn" type="button" data-act="unsel" aria-label="Cerrar" title="Cerrar">✕</button></div></div>
-    ${it.bloq?`<p class="lock-note">🔒 Bloqueado: no se puede mover, girar ni cambiar. Pulsa el candado para editarlo.</p>`:""}
-    <fieldset class="pr-fs"${it.bloq?" disabled":""}>
+    ${it.bloq?`<p class="lock-note">🔒 Bloqueado: no se puede mover, girar ni cambiar. Pulsa el candado para editarlo.</p>`:allLocked(it)?`<p class="lock-note">🔒 Todos los muebles están bloqueados. Pulsa el candado de la esquina del plano para cambiarlos.</p>`:""}
+    <fieldset class="pr-fs"${isLocked(it)?" disabled":""}>
     <div class="props">
       ${it.tipo?"":`<div class="full"><label>Color</label><div class="swatches">${FILLS.map((f,i)=>`<button type="button" aria-label="Color ${i+1}" data-color="${i}" aria-pressed="${!it.hex&&(it.color??0)===i}" style="background:var(${f})"></button>`).join("")}<input type="color" id="pr_hex" value="${/^#[0-9a-f]{6}$/i.test(it.hex||"")?it.hex:"#b07a55"}" aria-label="Elegir color exacto" title="Color exacto"></div></div>
       <div class="full"><label for="pr_hex2">Patas, estructura y tiradores</label><div class="swatches">${["#6B4A33","#C9A27A","#26262A","#9DA1A6","#FAF6F0","#B8895A"].map(c=>`<button type="button" aria-label="Color de patas ${c}" data-hex2="${c}" aria-pressed="${(it.hex2||"")===c}" style="background:${c}"></button>`).join("")}<input type="color" id="pr_hex2" value="${/^#[0-9a-f]{6}$/i.test(it.hex2||"")?it.hex2:"#6b4a33"}" aria-label="Color exacto de patas y estructura" title="Color exacto">${it.hex2?`<button type="button" class="btn ghost sm" data-hex2="">Original</button>`:""}</div></div>`}
@@ -2169,7 +2170,10 @@ function colorPreview(it){
     if(V.room&&$("view3d")){ build3dRoom(V.room); draw3d(); }
   });
 }
-function lockedHint(){ if(Date.now()-(lockedHint.t||0)<2500) return; lockedHint.t=Date.now(); toast("Está bloqueado. Pulsa el candado para moverlo."); }
+// Bloqueado él solo o porque está bloqueada toda la estancia
+const allLocked=it=>!!S.estancias.find(e=>e.id===it.estanciaId)?.bloqTodo;
+const isLocked=it=>!!it.bloq||allLocked(it);
+function lockedHint(it){ if(Date.now()-(lockedHint.t||0)<2500) return; lockedHint.t=Date.now(); toast(it&&!it.bloq&&allLocked(it)?"Todo está bloqueado. Pulsa el candado de la esquina del plano para mover los muebles.":"Está bloqueado. Pulsa el candado para moverlo."); }
 function liftPreview(it,z){ it.z=z; if(V.objs&&V.objs[it.id]){ place3d(V.objs[it.id],it); draw3d(); } }
 function dropItem(it,riders,r,resting=true){
   if(canStack(it)&&resting) it.z=supportHeight(it);
@@ -2344,7 +2348,7 @@ function bindPlan(r){
     if(!g){ if(S.sel){S.sel=null;render();} if(S.paint&&S.finWall!=="all"){ S.finWall="all"; render(); } return; }
     const it=S.items.find(i=>i.id===g.dataset.item); if(!it) return;
     if(S.paint){ S.paint=false; S.finWall="all"; }
-    if(it.bloq){ e.preventDefault(); if(S.sel!==it.id){ S.sel=it.id; render(); } lockedHint(); return; }
+    if(isLocked(it)){ e.preventDefault(); if(S.sel!==it.id){ S.sel=it.id; render(); } lockedHint(it); return; }
     e.preventDefault();
     S.preEdit={...it}; const p=toCm(e); drag={it,g,dx:p.x-it.x,dy:p.y-it.y,x0:it.x,y0:it.y,riders:ridersOf(it),rest:Math.abs((+it.z||0)-supportHeight(it))<2,moved:false,wasSel:S.sel===it.id};
     S.sel=it.id; S.dragging=true; g.classList.add("drag");
@@ -2817,7 +2821,7 @@ function ensure3d(){
     if(!hit&&S.paint&&hits[0]&&hits[0].object.userData.wallIdx!=null){ finRoom=V.room?.id||finRoom; S.finWall=hits[0].object.userData.wallIdx; render(); return; }
     if(!hit) return;
     const it=S.items.find(i=>i.id===hit.object.userData.itemId), p=floorPt(e); if(!it||!p) return;
-    if(it.bloq){ if(S.sel!==it.id){ S.sel=it.id; render(); } lockedHint(); return; }
+    if(isLocked(it)){ if(S.sel!==it.id){ S.sel=it.id; render(); } lockedHint(it); return; }
     V.controls.enabled=false; S.dragging=true;
     S.preEdit={...it}; V.drag={it,ox:p.x-it.x,oz:p.z-it.y,x0:it.x,y0:it.y,riders:ridersOf(it),rest:Math.abs((+it.z||0)-supportHeight(it))<2,moved:false,wasSel:S.sel===it.id,wall:isWallItem(it)?wallGrab(it,V.room,e,ndc):null};
     el.setPointerCapture(e.pointerId);
@@ -5154,6 +5158,7 @@ document.addEventListener("click",e=>{
     case "budAdd": openBudAdd(); break;
     case "budNewProd": $("dlgBudAdd").close(); openProd(null,{}); setTimeout(()=>{ $("d_estado").value="elegido"; },0); break;
     case "lockItem": { const it=selItem(); if(it){ saveItem(it,{bloq:!it.bloq}); toast(it.bloq?"Desbloqueado: ya puedes moverlo":"Bloqueado: ya no se moverá sin querer"); } break; }
+    case "lockAll": { const p0=proyecto(), r0=p0&&room(p0); if(!r0) break; const {id,...b}=r0, on=!r0.bloqTodo; save("estancias",id,{...b,bloqTodo:on}).then(()=>toast(on?"🔒 Todos los muebles bloqueados: ya no se moverán sin querer.":"🔓 Muebles desbloqueados.")).catch(()=>{}); break; }
     case "unlockAll": { const p0=proyecto(), r0=p0&&room(p0); if(!r0) break; const its=S.items.filter(i=>i.estanciaId===r0.id&&i.bloq);
       // se guardan todos de una vez y se repinta una sola vez, para que no se quede pensando
       S.dragging=true; held(async()=>{ for(const i of its){ const {id,...b}=i; await save("items",id,{...b,bloq:false}).catch(()=>{}); } }).finally(()=>{ S.dragging=false; render(); }); toast(`${its.length} muebles desbloqueados`); break; }
@@ -5177,7 +5182,7 @@ document.addEventListener("click",e=>{
     case "mirror": { const it=selItem(); if(it) saveItem(it,{espejo:!it.espejo}); break; }
     case "wallToggle": { const it=selItem(); if(!it) break; const on=!isWallItem(it); saveItem(it,wallPatch(it,on)); toast(on?`«${it.nombre}» colgado en la pared más cercana`:`«${it.nombre}» descolgado`); break; }
     case "dup": { const it=selItem(); if(it){ const {id,...b}=it; const nid=uid(); S.sel=nid; save("items",nid,{...b,bloq:false,x:it.x+20,y:it.y+20,creado:Date.now()}).catch(()=>{}); } break; }
-    case "delItem": { const it=selItem(); if(it&&!it.bloq) deleteItem(it); break; }
+    case "delItem": { const it=selItem(); if(it&&!isLocked(it)) deleteItem(it); else if(it) lockedHint(it); break; }
   }
 });
 document.addEventListener("change",e=>{
@@ -5222,7 +5227,7 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Enter"&&e.target.matches("[data-edittask]")) openTask(S.tareas.find(y=>y.id===e.target.dataset.edittask));
   if(S.tab==="plano"&&S.sel&&!e.target.closest("input,textarea,select,dialog")){
     const it=selItem(); if(!it) return;
-    if(it.bloq){ if(/^Arrow|^Delete$|^Backspace$|^r$/i.test(e.key)){ e.preventDefault(); lockedHint(); } return; }
+    if(isLocked(it)){ if(/^Arrow|^Delete$|^Backspace$|^r$/i.test(e.key)){ e.preventDefault(); lockedHint(it); } return; }
     const step=e.shiftKey?1:5, mv={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]}[e.key];
     if(mv){ e.preventDefault(); const p0=proyecto(), [x,y]=constrain(it,it.x+mv[0],it.y+mv[1],p0&&room(p0)); if(x!==it.x||y!==it.y) saveItem(it,{x,y}); }
     if(e.key==="r"||e.key==="R") rotateItem(it);
